@@ -1,0 +1,13 @@
+motor_right_pwm: 0
+motor_right_dir: 0
+motor_right_brake: 0
+right_encoder: 0
+
+motor_left_pwm: 0
+motor_left_dir: 0
+motor_left_brake: 0
+left_encoder: 0
+
+lasser: 0
+
+servo: 0
