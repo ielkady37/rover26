@@ -8,6 +8,6 @@ motor_left_dir: 0
 motor_left_brake: 0
 left_encoder: 0
 
-lasser: 0
+laser: 0
 
 servo: 0

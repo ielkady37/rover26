@@ -13,3 +13,4 @@ src/build/
 src/devel/
 src/log/
 src/install/
+.env
