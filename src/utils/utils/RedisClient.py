@@ -77,6 +77,18 @@ class RedisClient:
             self._available = False
         return False
 
+    def close(self) -> None:
+        """Disconnect from Redis and reset the singleton so it can reconnect."""
+        try:
+            if self._client:
+                self._client.connection_pool.disconnect()
+        except Exception:
+            pass
+        finally:
+            self._client = None
+            self._available = False
+            RedisClient._instance = None
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

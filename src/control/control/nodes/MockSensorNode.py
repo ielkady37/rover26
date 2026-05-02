@@ -66,6 +66,22 @@ class MockSensorNode(Node):
         )
 
     # ------------------------------------------------------------------
+    # Graceful shutdown
+    # ------------------------------------------------------------------
+
+    def destroy_node(self) -> None:
+        """Cancel timer and log shutdown before ROS teardown."""
+        try:
+            self._timer.cancel()
+        except Exception:
+            pass
+        try:
+            self._log.info('MockSensorNode shutting down')
+        except Exception:
+            pass
+        super().destroy_node()
+
+    # ------------------------------------------------------------------
     # Sensor definitions – edit here to add/remove mock sensors
     # ------------------------------------------------------------------
 

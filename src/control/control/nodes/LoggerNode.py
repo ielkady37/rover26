@@ -72,6 +72,23 @@ class LoggerNode(Node):
         self.get_logger().info('LoggerNode ready – publishing /rover/logs')
 
     # ------------------------------------------------------------------
+    # Graceful shutdown
+    # ------------------------------------------------------------------
+
+    def destroy_node(self) -> None:
+        """Cancel timer and close Redis before ROS teardown."""
+        try:
+            self._timer.cancel()
+        except Exception:
+            pass
+        try:
+            self._rc.close()
+        except Exception:
+            pass
+        self.get_logger().info('LoggerNode shutting down')
+        super().destroy_node()
+
+    # ------------------------------------------------------------------
     # Timer callback
     # ------------------------------------------------------------------
 

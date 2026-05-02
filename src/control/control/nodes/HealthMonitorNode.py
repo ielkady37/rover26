@@ -77,6 +77,26 @@ class HealthMonitorNode(Node):
         self._log.info('HealthMonitorNode ready – publishing /rover/health at 1 Hz')
 
     # ------------------------------------------------------------------
+    # Graceful shutdown
+    # ------------------------------------------------------------------
+
+    def destroy_node(self) -> None:
+        """Cancel timer, close Redis, flush logger before ROS teardown."""
+        try:
+            self._timer.cancel()
+        except Exception:
+            pass
+        try:
+            self._rc.close()
+        except Exception:
+            pass
+        try:
+            self._log.info('HealthMonitorNode shutting down')
+        except Exception:
+            pass
+        super().destroy_node()
+
+    # ------------------------------------------------------------------
     # Timer callback
     # ------------------------------------------------------------------
 
@@ -164,21 +184,6 @@ class HealthMonitorNode(Node):
 # Entry point
 # ---------------------------------------------------------------------------
 
-def main(args=None) -> None:
-    """Spin the HealthMonitorNode."""
-    rclpy.init(args=args)
-    node = HealthMonitorNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
 def main(args=None) -> None:
     """Spin the HealthMonitorNode."""
     rclpy.init(args=args)
