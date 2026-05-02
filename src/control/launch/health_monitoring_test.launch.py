@@ -19,58 +19,25 @@ Prerequisites
 """
 
 import os
-import pathlib
 
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, LogInfo, SetEnvironmentVariable, TimerAction
+from launch.actions import ExecuteProcess, LogInfo, TimerAction
 from launch_ros.actions import Node
 
+from utils.EnvParams import EnvParams
+
 
 # ---------------------------------------------------------------------------
-# Locate project root and resolve the correct .env file
+# Load env (auto-selects .env.rasp → .env.local)
 # ---------------------------------------------------------------------------
 
-def _find_project_root() -> pathlib.Path:
-    """Walk upward from this file until a /config directory is found."""
-    current = pathlib.Path(__file__).resolve()
-    for parent in current.parents:
-        if (parent / 'config').is_dir():
-            return parent
-    return current.parents[3]   # reasonable fallback
+_ep = EnvParams()
+_ENV_FILE = EnvParams.env_path or '(none – using built-in defaults)'
 
-
-def _load_env_file(path: pathlib.Path) -> dict:
-    """Parse a .env file and return a {key: value} dict (skips comments)."""
-    env = {}
-    if not path.exists():
-        return env
-    with open(path) as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            key, _, value = line.partition('=')
-            env[key.strip()] = value.strip()
-    return env
-
-
-_PROJECT_ROOT = _find_project_root()
-
-# Decide which .env to use: prefer .env.rasp in REALTIME, else .env.local
-_ENV_MODE = os.environ.get('ENV', 'DEV')
-_ENV_FILE = (
-    _PROJECT_ROOT / '.env.rasp'
-    if _ENV_MODE == 'REALTIME'
-    else _PROJECT_ROOT / '.env.local'
-)
-
-# Load values now so Node env_overrides and SetEnvironmentVariable can use them
-_ENV_VARS = _load_env_file(_ENV_FILE)
-
-# Merge .env vars ON TOP of the current process environment so that
-# PYTHONPATH, LD_LIBRARY_PATH, ROS_* etc. set by source install/setup.bash
-# are preserved.  .env values take priority for any key they define.
-_MERGED_ENV = {**os.environ, **_ENV_VARS}
+# Merge loaded env ON TOP of current process environment so that
+# PYTHONPATH, LD_LIBRARY_PATH, ROS_* set by source install/setup.bash
+# are preserved.
+_MERGED_ENV = {**os.environ}
 
 
 # ---------------------------------------------------------------------------
@@ -80,15 +47,12 @@ _MERGED_ENV = {**os.environ, **_ENV_VARS}
 def generate_launch_description() -> LaunchDescription:
     """Build the launch description for the health monitoring test."""
 
-    # --- 1. Inject every .env variable into the launch process environment ---
-    set_env_actions = [
-        SetEnvironmentVariable(name=k, value=v)
-        for k, v in _ENV_VARS.items()
-    ]
+    # --- 1. No extra SetEnvironmentVariable needed – EnvParams already
+    #        injected all values into os.environ (and _MERGED_ENV reflects that) ---
 
     # --- 2. Start Redis (skip silently if already running) ---
-    redis_host = _ENV_VARS.get('ROVER_REDIS_HOST', 'localhost')
-    redis_port = _ENV_VARS.get('ROVER_REDIS_PORT', '6379')
+    redis_host = _ep.get('ROVER_REDIS_HOST', 'localhost')
+    redis_port = _ep.get('ROVER_REDIS_PORT', '6379')
 
     start_redis = ExecuteProcess(
         cmd=[
@@ -134,7 +98,6 @@ def generate_launch_description() -> LaunchDescription:
 
     return LaunchDescription([
         LogInfo(msg=f'[launch] Loading env from: {_ENV_FILE}'),
-        *set_env_actions,
 
         LogInfo(msg=f'[launch] Starting Redis on {redis_host}:{redis_port}'),
         start_redis,

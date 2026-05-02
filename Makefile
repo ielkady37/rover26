@@ -47,13 +47,41 @@ install:
 
 # -----------------------------------------------------------------------------
 build:
-	@echo ">>> [1/3] Sourcing ROS and building interfaces..."
-	bash -c "source $(ROS_SETUP) && \
-	         colcon build --packages-select interfaces"
+	@echo ">>> [1/2] Sourcing ROS and building interfaces..."
+	@bash -c "source $(ROS_SETUP) && \
+	         colcon build --packages-select interfaces" \
+	|| { \
+		echo ""; \
+		echo ">>> Build failed. Remove build/ and install/ for a clean rebuild? [y/N]"; \
+		read -r ans; \
+		if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+			echo ">>> Cleaning..."; \
+			rm -rf build/ install/; \
+			echo ">>> Retrying interfaces build..."; \
+			bash -c "source $(ROS_SETUP) && colcon build --packages-select interfaces" || exit 1; \
+		else \
+			echo ">>> Aborted."; exit 1; \
+		fi; \
+	}
 
 	@echo ">>> [2/2] Building utils and control..."
-	bash -c "source $(ROS_SETUP) && source install/setup.bash && \
-	         colcon build --packages-select utils control --symlink-install"
+	@bash -c "source $(ROS_SETUP) && source install/setup.bash && \
+	         colcon build --packages-select utils control --symlink-install" \
+	|| { \
+		echo ""; \
+		echo ">>> Build failed. Remove build/ and install/ for a clean rebuild? [y/N]"; \
+		read -r ans; \
+		if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+			echo ">>> Cleaning..."; \
+			rm -rf build/ install/; \
+			echo ">>> Rebuilding all packages from scratch..."; \
+			bash -c "source $(ROS_SETUP) && colcon build --packages-select interfaces" || exit 1; \
+			bash -c "source $(ROS_SETUP) && source install/setup.bash && \
+			         colcon build --packages-select utils control --symlink-install" || exit 1; \
+		else \
+			echo ">>> Aborted."; exit 1; \
+		fi; \
+	}
 
 	@echo ""
 	@echo ">>> Build complete. To use the workspace run:"
