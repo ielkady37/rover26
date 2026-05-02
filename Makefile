@@ -51,13 +51,9 @@ build:
 	bash -c "source $(ROS_SETUP) && \
 	         colcon build --packages-select interfaces"
 
-	@echo ">>> [2/3] Building utils and control..."
+	@echo ">>> [2/2] Building utils and control..."
 	bash -c "source $(ROS_SETUP) && source install/setup.bash && \
 	         colcon build --packages-select utils control --symlink-install"
-
-	@echo ">>> [3/3] Fixing Python package metadata (importlib.metadata / Python 3.10+)..."
-	pip install -e src/utils --no-build-isolation -q
-	pip install -e src/control --no-build-isolation -q
 
 	@echo ""
 	@echo ">>> Build complete. To use the workspace run:"
