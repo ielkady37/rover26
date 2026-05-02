@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import pytest
-import math
 from control.services.Steering import Steering
 from control.services.DirEvaluator import DirEvaluator
 from control.services.PWMMapper import PWMMapper
