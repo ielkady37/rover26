@@ -7,11 +7,23 @@ __pycache__/
 .pytest_cache/
 .coverage
 install/
-log/
+# Ignore rover app log files but keep directory structure via .gitkeep
+log/**/*.log
+log/**/*.log.*
+!log/**/.gitkeep
+# Ignore colcon-generated log entries at log root
+log/build_*/
+log/latest
+log/latest_build
 devel/
 src/build/
 src/devel/
 src/log/
+
+# Environment files – never commit real configs
+.env.local
+.env.rasp
+# .env.example is intentionally NOT ignored (it is the template)
 src/install/
-.env.*
-*.env
+.env
+.env.local

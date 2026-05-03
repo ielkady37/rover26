@@ -23,6 +23,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'logger_node = control.nodes.LoggerNode:main',
+            'health_monitor_node = control.nodes.HealthMonitorNode:main',
+            'mock_sensor_node = control.nodes.MockSensorNode:main',
         ],
     },
 )
