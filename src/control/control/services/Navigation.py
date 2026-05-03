@@ -3,43 +3,34 @@ from typing import Optional
 from control.services.Steering import Steering
 from control.services.DirEvaluator import DirEvaluator
 from control.services.PWMMapper import PWMMapper
-from control.services.PID import PIDController
 from control.DTOs.MotorCommandDTO import MotorCommandDTO
 
 class Navigation:
     """
-    Facade service orchestrating locomotion logic.
-    Integrates PID stabilization to maintain straight-line driving.
+    Unified Facade service for locomotion.
+    Takes normalized forward and rotational efforts [-1.0, 1.0] and maps 
+    them to hardware-ready MotorCommandDTOs. Agnostic to whether the 
+    input came from a joystick, PID, or autonomous kinematics.
     """
 
-    def __init__(self, deadzone: float = 0.0, max_pwm: int = 255, kp: float = 0.0, ki: float = 0.0, kd: float = 0.0):
+    def __init__(self, deadzone: float = 0.0, max_pwm: int = 255):
         self.dir_evaluator = DirEvaluator(deadzone=deadzone)
         self.pwm_mapper = PWMMapper(max_pwm=max_pwm)
-        self.pid = PIDController(kp=kp, ki=ki, kd=kd)
-        self.deadzone = deadzone
 
-    def calculate_motor_commands(self, throttle_axis: float, yaw_axis: float, 
-                                 current_yaw: float, dt: float) -> Optional[MotorCommandDTO]:
+    def calculate_motor_commands(self, linear_effort: float, angular_effort: float) -> Optional[MotorCommandDTO]:
         """
-        Processes axes and applies PID correction if driving straight.
+        Processes unified efforts into hardware bounds.
+
+        Args:
+            linear_effort: Forward/backward drive [-1.0, 1.0].
+            angular_effort: Rotational drive [-1.0, 1.0].
+
+        Returns:
+            MotorCommandDTO if successful, None if math validation fails.
         """
         try:
-            active_yaw_command = yaw_axis
-
-            # If driver is manually turning, bypass PID and sync setpoint.
-            if abs(yaw_axis) > self.deadzone:
-                self.pid.update_setpoint(current_yaw)
-            
-            # If driver is only pushing throttle, let PID maintain the heading.
-            elif abs(throttle_axis) > self.deadzone:
-                active_yaw_command = self.pid.stabilize(measured_value=current_yaw, dt=dt)
-                
-            # If idle (neither throttle nor yaw), just sync setpoint to avoid jumping when resuming
-            else:
-                self.pid.update_setpoint(current_yaw)
-
-            # 1. Kinematics (Tank Drive Mixing) with the corrected yaw
-            left_speed, right_speed = Steering.calculate_tank_drive(throttle=throttle_axis, yaw=active_yaw_command)
+            # 1. Kinematics (Tank Drive Mixing)
+            left_speed, right_speed = Steering.calculate_tank_drive(throttle=linear_effort, yaw=angular_effort)
 
             # 2. Evaluate Direction and Brake
             l_dir, l_brake, l_mag = self.dir_evaluator.evaluate(left_speed)

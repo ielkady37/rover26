@@ -14,3 +14,4 @@ src/devel/
 src/log/
 src/install/
 .env
+.env.local
