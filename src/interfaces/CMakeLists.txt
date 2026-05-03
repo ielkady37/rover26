@@ -11,13 +11,14 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 
-# rosidl_generate_interfaces(${PROJECT_NAME}
-#   "msg/IMU.msg"
-#   "msg/MotorCommands.msg"
-#   "srv/GetConfig.srv"
-#   DEPENDENCIES std_msgs
-# )
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/LogEntry.msg"
+  "msg/HealthReport.msg"
+  "msg/MotorCommands.msg"
+  DEPENDENCIES builtin_interfaces std_msgs
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
