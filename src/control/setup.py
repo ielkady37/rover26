@@ -23,6 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'esp_bridge_node = control.nodes.ESPBridgeNode:main',
         ],
     },
 )

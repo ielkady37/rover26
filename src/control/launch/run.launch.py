@@ -8,7 +8,12 @@ def generate_launch_description():
     #     output="screen",
     #     name="example_node",
     # )
-
+    esp_bridge_node = Node(
+        package='control',
+        executable='esp_bridge_node',
+        output="screen",
+        name="esp_bridge_node"
+    )
     return LaunchDescription([
-        # example_node,
+        esp_bridge_node,
     ])
