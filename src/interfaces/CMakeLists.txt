@@ -15,6 +15,7 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EulerAngles.msg"
   "msg/EncoderRevolutions.msg"
+  "msg/ActuatorCommand.msg"
   DEPENDENCIES std_msgs
 )
 

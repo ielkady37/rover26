@@ -1,29 +1,39 @@
 #!/usr/bin/env python3
 """
-ESPBridgeNode — ROS2 node that owns the SPI link to the ESP32.
+ESPBridgeNode — ROS2 node that owns both ESP32 links.
+
+  • SPI  → sensor  ESP32  (read)   publishes /imu /odom /euler /encoders
+  • I2C  → actuator ESP32 (write)  subscribes /esp_tx
 
 On startup
 ──────────
-  1. Opens SPI and reads the one-time ContractPacket from the ESP32.
+  1. Opens SPI, reads one-time ContractPacket from sensor ESP32.
+  2. Opens I2C, sends one-time ContractPacket to actuator ESP32.
 
-Every timer tick (default 50 Hz)
-─────────────────────────────────
-  2. Reads one 62-byte SensorPacket.
-  3. Publishes sensor_msgs/Imu  on /imu
-  4. Publishes nav_msgs/Odometry on /odom  (dead-reckoning from encoders)
+Every timer tick
+─────────────────
+  3. Reads one SensorPacket and publishes sensor topics.
+
+On every /esp_tx message
+─────────────────────────
+  4. Sends one ActuatorPacket to the actuator ESP32 via I2C.
 
 ROS2 parameters
 ───────────────
+  --- SPI / sensor ---
   bus           (int,   0)       SPI bus
   device        (int,   0)       SPI chip-select
   max_speed_hz  (int,   1000000) SPI clock
   spi_mode      (int,   0)       SPI mode 0-3
-  wheel_radius  (float, 0.05)    metres — wheel radius
-  wheel_base    (float, 0.30)    metres — centre-to-centre track width
-  publish_rate  (float, 50.0)    Hz — read + publish frequency
+  wheel_radius  (float, 0.05)    metres
+  wheel_base    (float, 0.30)    metres
+  publish_rate  (float, 100.0)   Hz
   imu_frame     (str,   'imu_link')
   odom_frame    (str,   'odom')
   base_frame    (str,   'base_link')
+  --- I2C / actuator ---
+  i2c_bus       (int,   1)       I2C bus  (/dev/i2c-1)
+  i2c_address   (int,   0x10)    actuator ESP32 7-bit address
 """
 import math
 import threading
@@ -35,10 +45,11 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
-from interfaces.msg import EulerAngles, EncoderRevolutions
+from interfaces.msg import EulerAngles, EncoderRevolutions, ActuatorCommand as ActuatorCommandMsg
 
 from control.services.ESPDataController import ESPDataController
 from control.DTOs.SensorData import SensorData
+from control.DTOs.ActuatorCommand import ActuatorCommand, MotorCommand
 from control.exceptions.SensorInitializationError import SensorInitializationError
 from control.exceptions.SensorReadError import SensorReadError
 
@@ -61,6 +72,8 @@ class ESPBridgeNode(Node):
         self.declare_parameter("imu_frame",    "imu_link")
         self.declare_parameter("odom_frame",   "odom")
         self.declare_parameter("base_frame",   "base_link")
+        self.declare_parameter("i2c_bus",      1)
+        self.declare_parameter("i2c_address",  0x10)
 
         # publishers
         self._imu_pub     = self.create_publisher(Imu,                "/imu",      10)
@@ -76,25 +89,38 @@ class ESPBridgeNode(Node):
         self._prev_enc1: float | None = None
         self._prev_enc2: float | None = None
 
-        # initialise SPI / contract
-        comm = {
+        # initialise SPI + I2C / contracts
+        spi_comm = {
             "bus":          self.get_parameter("bus").value,
             "device":       self.get_parameter("device").value,
             "max_speed_hz": self.get_parameter("max_speed_hz").value,
             "mode":         self.get_parameter("spi_mode").value,
         }
-        self._ctrl = ESPDataController(comm)
+        i2c_comm = {
+            "bus":     self.get_parameter("i2c_bus").value,
+            "address": self.get_parameter("i2c_address").value,
+        }
+        self._ctrl = ESPDataController(spi_comm, i2c_comm)
         try:
             self._ctrl.initialize()
             self.get_logger().info(
-                f"ESP32 contract received — "
-                f"fields={self._ctrl.fields}, "
+                f"ESP32 contracts exchanged — "
+                f"SPI fields={self._ctrl.fields}, "
                 f"ticks_per_rev={self._ctrl.ticks_per_rev}, "
-                f"packet_size={self._ctrl._packet_size} bytes"
+                f"packet_size={self._ctrl._packet_size} bytes | "
+                f"I2C actuator 0x{i2c_comm['address']:02X} ready"
             )
         except SensorInitializationError as e:
-            self.get_logger().fatal(f"Failed to initialise SPI link: {e}")
+            self.get_logger().fatal(f"Failed to initialise ESP32 links: {e}")
             raise
+
+        # /esp_tx subscriber
+        self._esp_tx_sub = self.create_subscription(
+            ActuatorCommandMsg,
+            "/esp_tx",
+            self._esp_tx_cb,
+            10,
+        )
 
         # latest data cache — written by reader thread, read by timer
         self._latest_data: SensorData | None = None
@@ -110,6 +136,31 @@ class ESPBridgeNode(Node):
         rate = self.get_parameter("publish_rate").value
         self._timer = self.create_timer(1.0 / rate, self._timer_cb)
         self.get_logger().info(f"ESPBridgeNode running at {rate:.1f} Hz")
+
+    # /esp_tx → actuator ESP32
+
+    def _esp_tx_cb(self, msg: ActuatorCommandMsg) -> None:
+        cmd = ActuatorCommand(
+            rightMotor=MotorCommand(
+                dir=int(msg.m1_dir),
+                brake=int(msg.m1_brake),
+                speed=float(msg.m1_speed),
+            ),
+            leftMotor=MotorCommand(
+                dir=int(msg.m2_dir),
+                brake=int(msg.m2_brake),
+                speed=float(msg.m2_speed),
+            ),
+            laser=int(msg.laser),
+            servo=float(msg.servo),
+        )
+        try:
+            self._ctrl.write(cmd)
+        except SensorReadError as e:
+            self.get_logger().warn(
+                f"Actuator write failed: {e}",
+                throttle_duration_sec=5.0,
+            )
 
     # background SPI reader
 
