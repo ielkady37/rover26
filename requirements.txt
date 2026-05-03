@@ -1,0 +1,33 @@
+# =============================================================================
+#  rover26 – Python dependencies
+#
+#  ROS 2 packages (rclpy, launch, launch_ros, interfaces, ament_*)
+#  are installed via rosdep / apt and are NOT listed here.
+#
+#  Install:
+#      pip install -r requirements.txt
+# =============================================================================
+
+# --- Runtime ------------------------------------------------------------------
+
+# System metrics (CPU, RAM, temperature, disk, battery, WiFi)
+psutil>=5.9.0
+
+# Redis client – used by RoverLogger (stream), IHealthCheckable (health hashes),
+# LoggerNode (XREAD), HealthMonitorNode (health registry)
+redis>=4.0.0
+
+# YAML config loading (Configurator)
+PyYAML>=5.4.1
+
+# Interface definitions (IHealthCheckable and other rover interfaces)
+zope.interface>=5.0.0
+
+# I2C communication (e.g. IMU over I2C on Raspberry Pi)
+smbus2>=0.4.0
+
+# SPI communication (e.g. sensors over SPI on Raspberry Pi)
+spidev>=3.5
+
+# --- Development / Test -------------------------------------------------------
+pytest>=7.0.0
