@@ -239,11 +239,14 @@ class ESPBridgeNode(Node):
 
     def _publish_odom(self, data: SensorData, stamp: Time) -> None:
         wheel_radius: float = self.get_parameter("wheel_radius").value
-        wheel_base:   float = self.get_parameter("wheel_base").value
         odom_frame:   str   = self.get_parameter("odom_frame").value
         base_frame:   str   = self.get_parameter("base_frame").value
 
-        #  dead-reckoning update
+        # Use IMU yaw directly as heading (degrees → radians).
+        # This avoids encoder-based heading drift.
+        imu_theta = math.radians(data.yaw)   # data.yaw is in [-180, 180] °
+
+        # Dead-reckoning: distance still comes from encoders, heading from IMU.
         if self._prev_enc1 is None:
             # first reading — seed without moving
             self._prev_enc1 = data.enc1_net_rev
@@ -254,12 +257,17 @@ class ESPBridgeNode(Node):
             self._prev_enc1 = data.enc1_net_rev
             self._prev_enc2 = data.enc2_net_rev
 
-            delta_dist  = (delta_left + delta_right) * 0.5
-            delta_theta = (delta_right - delta_left) / wheel_base
+            delta_dist = (delta_left + delta_right) * 0.5
 
-            self._theta += delta_theta
-            self._x     += delta_dist * math.cos(self._theta)
-            self._y     += delta_dist * math.sin(self._theta)
+            # Integrate position using IMU heading at the midpoint of the step.
+            # Use the average of previous and current IMU theta to reduce error
+            # during fast turns.
+            mid_theta   = _wrap_angle(self._theta + _wrap_angle(imu_theta - self._theta) * 0.5)
+            self._x    += delta_dist * math.cos(mid_theta)
+            self._y    += delta_dist * math.sin(mid_theta)
+
+        # Update stored heading from IMU (not accumulated encoder delta).
+        self._theta = imu_theta
 
         # build Odometry message 
         odom_quat = _yaw_to_quat(self._theta)
@@ -302,6 +310,11 @@ def _yaw_to_quat(yaw: float) -> Quaternion:
     """Convert a 2D yaw angle (radians) to a geometry_msgs/Quaternion."""
     half = yaw * 0.5
     return Quaternion(x=0.0, y=0.0, z=math.sin(half), w=math.cos(half))
+
+
+def _wrap_angle(angle: float) -> float:
+    """Wrap *angle* (radians) to [-π, π]."""
+    return math.atan2(math.sin(angle), math.cos(angle))
 
 
 def main(args=None) -> None:
