@@ -1,0 +1,6 @@
+track_width_meters: 0.3
+max_linear_vel_mps: 0.3
+max_angular_vel_radps: 1.0
+deadzone: 0.0
+watchdog_timeout_sec: 0.5
+max_pwm: 255

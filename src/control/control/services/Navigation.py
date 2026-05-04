@@ -19,9 +19,17 @@ class Navigation:
         self._log.info(f"Navigation facade active (deadzone={deadzone}, max_pwm={max_pwm})")
 
     def calculate_motor_commands(self, linear_effort: float, angular_effort: float) -> Optional[MotorCommandDTO]:
+        """Used by Manual Navigation (Joystick + PID) which requires mixing."""
         try:
             left_speed, right_speed = Steering.calculate_tank_drive(throttle=linear_effort, yaw=angular_effort)
+            return self.calculate_from_wheel_speeds(left_speed, right_speed)
+        except (ValueError, TypeError) as e:
+            self._log.warn(f"Navigation facade mathematical fault during mixing: {e}")
+            return None
 
+    def calculate_from_wheel_speeds(self, left_speed: float, right_speed: float) -> Optional[MotorCommandDTO]:
+        """Used by Autonomous Navigation (Kinematics) which provides exact wheel speeds."""
+        try:
             l_dir, l_brake, l_mag = self.dir_evaluator.evaluate(left_speed)
             r_dir, r_brake, r_mag = self.dir_evaluator.evaluate(right_speed)
 
@@ -33,5 +41,5 @@ class Navigation:
                 right_pwm=r_pwm, right_dir=r_dir, right_brake=r_brake
             )
         except (ValueError, TypeError) as e:
-            self._log.warn(f"Navigation facade mathematical fault: {e}")
+            self._log.warn(f"Navigation facade mathematical fault during mapping: {e}")
             return None

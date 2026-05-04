@@ -6,6 +6,7 @@ class Configurator():
     BUTTONS = "joystick_buttons"
     PINS = "hardware_pins"
     PID_PARAMS = "pid_ks"
+    KINEMATICS = "kinematics"
     
     def __init__(self):
         self.__configFile = ''
@@ -36,6 +37,8 @@ class Configurator():
             config_filename = Configurator.PINS
         elif data_type == Configurator.PID_PARAMS:
             config_filename = Configurator.PID_PARAMS
+        elif data_type == Configurator.KINEMATICS:
+            config_filename = Configurator.KINEMATICS
         else:
             self.__raiseTypeError(data_type)
         
