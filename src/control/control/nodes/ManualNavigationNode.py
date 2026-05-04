@@ -1,81 +1,100 @@
 #!/usr/bin/env python3
 import rclpy
-from rclpy.node import Node
+from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import Imu
 
 import time
-from interfaces.msg import MotorCommands
+from interfaces.msg import ActuatorCommand
 from control.services.Navigation import Navigation
 from control.services.PID import PIDController
 from control.services.Joystick import CJoystick
 from utils.Configurator import Configurator
+from utils.Logger import RoverLogger
 
-class ManualNavigationNode(Node):
-    """
-    Node responsible for polling joystick shared memory, running the yaw PID loop,
-    and passing final efforts to the Navigation facade.
-    """
+class ManualNavigationNode(LifecycleNode):
 
     def __init__(self):
         super().__init__('manual_navigation_node')
-        self.logger = self.get_logger()
-
-        # 1. Load Parameters
+        self._log = RoverLogger()
+        
         self.declare_parameter('control_loop_rate_hz', 100.0)
         self.declare_parameter('max_pwm', 255)
         self.declare_parameter('deadzone', 0.0)
         
-        loop_rate = self.get_parameter('control_loop_rate_hz').value
-        max_pwm = self.get_parameter('max_pwm').value
-        self.deadzone = self.get_parameter('deadzone').value
+        self.control_timer = None
+        self.latest_yaw = 0.0 
+        self.last_time = time.time()
+        self.joystick = None
 
-        # Load PID configurations
+    def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._log.info("Configuring ManualNavigationNode...")
         try:
+            loop_rate = self.get_parameter('control_loop_rate_hz').value
+            max_pwm = self.get_parameter('max_pwm').value
+            self.deadzone = self.get_parameter('deadzone').value
+
             conf = Configurator()
             pid_data = conf.fetchData(Configurator.PID_PARAMS)
             kp = float(pid_data.get('yaw_KP', 0.0))
             ki = float(pid_data.get('yaw_KI', 0.0))
             kd = float(pid_data.get('yaw_KD', 0.0))
-        except Exception as e:
-            self.logger.warn(f"Failed to load PID configs, defaulting to 0: {e}")
-            kp, ki, kd = 0.0, 0.0, 0.0
 
-        # 2. Initialize Services
-        self.logger.info(f"Initializing PID ({kp}, {ki}, {kd}) and Navigation Facade...")
-        self.pid = PIDController(kp=kp, ki=ki, kd=kd)
-        self.navigation_service = Navigation(deadzone=self.deadzone, max_pwm=max_pwm)
-        
-        try:
+            self.pid = PIDController(kp=kp, ki=ki, kd=kd)
+            self.navigation_service = Navigation(deadzone=self.deadzone, max_pwm=max_pwm)
+            
             self.joystick = CJoystick(is_writer=False) 
+
+            motor_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.RELIABLE)
+            self.motor_pub = self.create_publisher(ActuatorCommand, '/esp_tx', motor_qos)
+
+            euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
+            self.euler_sub = self.create_subscription(Imu, '/euler', self.euler_callback, euler_qos)
+
+            timer_period = 1.0 / loop_rate
+            self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
+            self.control_timer.cancel() 
+
+            self._log.succ("ManualNavigationNode configured successfully.")
+            return TransitionCallbackReturn.SUCCESS
         except Exception as e:
-            self.logger.fatal(f"Failed to connect to CJoystick shared memory: {e}")
-            raise SystemExit(1)
+            self._log.err(f"Configuration failed: {e}")
+            return TransitionCallbackReturn.FAILURE
 
-        # 3. Setup Publishers
-        motor_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=1, reliability=ReliabilityPolicy.RELIABLE)
-        self.motor_pub = self.create_publisher(MotorCommands, '/motor_commands', motor_qos)
-
-        # 4. Setup Subscribers
-        imu_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=5, reliability=ReliabilityPolicy.BEST_EFFORT)
-        self.imu_sub = self.create_subscription(Imu, '/imu', self.imu_callback, imu_qos)
-
-        self.latest_yaw = 0.0 
+    def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._log.info("Activating Manual Navigation...")
+        super().on_activate(state)
         self.last_time = time.time()
+        self.control_timer.reset() 
+        return TransitionCallbackReturn.SUCCESS
 
-        # 5. Setup Control Loop Timer (Required for Shared Memory polling)
-        timer_period = 1.0 / loop_rate
-        self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
-        
-        self.logger.info(f"ManualNavigationNode started. Loop rate: {loop_rate}Hz")
+    def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._log.info("Deactivating Manual Navigation...")
+        super().on_deactivate(state)
+        self.control_timer.cancel() 
+        self.publish_safe_stop()    
+        return TransitionCallbackReturn.SUCCESS
 
-    def imu_callback(self, msg: Imu):
+    def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._log.info("Cleaning up resources...")
+        self.destroy_timer(self.control_timer)
+        self.destroy_subscription(self.euler_sub)
+        self.destroy_publisher(self.motor_pub)
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state: LifecycleState) -> TransitionCallbackReturn:
+        self._log.info("Shutting down...")
+        self.control_timer.cancel()
+        self.publish_safe_stop()
+        return TransitionCallbackReturn.SUCCESS
+
+    def euler_callback(self, msg: Imu):
         try:
-            if msg.angular_velocity.z != msg.angular_velocity.z: 
+            if msg.yaw != msg.yaw: 
                 return
-            self.latest_yaw = msg.angular_velocity.z
+            self.latest_yaw = msg.yaw
         except Exception as e:
-            self.logger.error(f"Error processing /imu callback: {e}")
+            self._log.err(f"Error processing /euler callback: {e}")
 
     def control_loop_callback(self):
         try:
@@ -104,34 +123,28 @@ class ManualNavigationNode(Node):
             if cmd_dto is None:
                 return
 
-            msg = MotorCommands()
-            msg.left_pwm = cmd_dto.left_pwm
-            msg.left_dir = cmd_dto.left_dir
-            msg.left_brake = cmd_dto.left_brake
-            msg.right_pwm = cmd_dto.right_pwm
-            msg.right_dir = cmd_dto.right_dir
-            msg.right_brake = cmd_dto.right_brake
+            msg = ActuatorCommand()
+            msg.m2_speed = cmd_dto.left_pwm
+            msg.m2_dir = cmd_dto.left_dir
+            msg.m2_brake = cmd_dto.left_brake
+            msg.m1_speed = cmd_dto.right_pwm
+            msg.m1_dir = cmd_dto.right_dir
+            msg.m1_brake = cmd_dto.right_brake
 
             self.motor_pub.publish(msg)
 
         except Exception as e:
-            self.logger.error(f"Exception in control loop: {e}")
+            self._log.err(f"Exception in control loop: {e}")
             self.publish_safe_stop()
 
     def publish_safe_stop(self):
         try:
-            msg = MotorCommands()
-            msg.left_brake = 1
-            msg.right_brake = 1
+            msg = ActuatorCommand()
+            msg.m1_brake = 1
+            msg.m2_brake = 1
             self.motor_pub.publish(msg)
         except Exception as e:
-            self.logger.error(f"Failed to publish safe stop: {e}")
-
-    def destroy_node(self):
-        self.logger.info("[ManualNavigationNode] Initiating graceful shutdown...")
-        self.control_timer.cancel()
-        self.publish_safe_stop()
-        super().destroy_node()
+            self._log.err(f"Failed to publish safe stop: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

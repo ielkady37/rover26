@@ -2,13 +2,13 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    # example_node = Node(
-    #     package='example_package',
-    #     executable='example_executable',
-    #     output="screen",
-    #     name="example_node",
-    # )
+    manual_navigation_node = Node(
+        package='control',
+        executable='manual_navigation_node',
+        output="screen",
+        name="manual_navigation_node",
+    )
 
     return LaunchDescription([
-        # example_node,
+        manual_navigation_node,
     ])
