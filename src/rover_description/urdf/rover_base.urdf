@@ -36,6 +36,7 @@
       </geometry>
     </collision>
   </link>
+
   <link name="RC_link">
     <inertial>
       <origin xyz="2.08680961399921E-10 -0.00282234465505049 6.11222781940479E-06" rpy="0 0 0" />
@@ -58,12 +59,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="RC_joint" type="continuous">
     <origin xyz="0 -0.298648302664341 -0.185789817447185" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="RC_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="LC_link">
     <inertial>
       <origin xyz="2.49478326885821E-10 0.00282234461580111 -6.11124898947102E-06" rpy="0 0 0" />
@@ -86,12 +89,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="LC_joint" type="continuous">
     <origin xyz="0 0.298058370787828 -0.185789818069492" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="LC_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="RB_link">
     <inertial>
       <origin xyz="1.59634971907963E-10 -1.41708311751643E-11 4.63036914366555E-10" rpy="0 0 0" />
@@ -114,12 +119,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="RB_joint" type="continuous">
     <origin xyz="-0.279999989347002 -0.185294965958683 -0.213999983185845" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="RB_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="LB_link">
     <inertial>
       <origin xyz="1.19726673020182E-10 -3.35306227228216E-11 1.98084687541566E-10" rpy="0 0 0" />
@@ -142,12 +149,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="LB_joint" type="continuous">
     <origin xyz="-0.27999998930708 0.184705033999643 -0.213999983517664" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="LB_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="RF_link">
     <inertial>
       <origin xyz="2.85578005687626E-10 -5.15184006566471E-11 8.22468287919875E-10" rpy="0 0 0" />
@@ -170,12 +179,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="RF_joint" type="continuous">
     <origin xyz="0.280000010534147 -0.185294965951893 -0.213999983529674" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="RF_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="LF_link">
     <inertial>
       <origin xyz="3.7119E-10 -6.6238E-11 6.0988E-10" rpy="0 0 0" />
@@ -198,12 +209,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="LF_joint" type="continuous">
     <origin xyz="0.280000010448551 0.184705034062867 -0.213999983913857" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="LF_link" />
     <axis xyz="0 1 0" />
   </joint>
+
   <link name="RCam_link">
     <inertial>
       <origin xyz="0.0071319 0.00013344 0.0068174" rpy="0 0 0" />
@@ -226,12 +239,14 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="RCam_joint" type="fixed">
     <origin xyz="-0.025966 -0.078591 0.2496" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="RCam_link" />
     <axis xyz="0 0 0" />
   </joint>
+
   <link name="LCam_link">
     <inertial>
       <origin xyz="0.0071319 -0.00013344 0.0068174" rpy="0 0 0" />
@@ -254,10 +269,93 @@
       </geometry>
     </collision>
   </link>
+
   <joint name="LCam_joint" type="fixed">
     <origin xyz="-0.025966 0.078001 0.2496" rpy="0 0 0" />
     <parent link="base_link" />
     <child link="LCam_link" />
     <axis xyz="0 0 0" />
+  </joint>
+
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0"
+      iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size = "0.03 0.03 0.01"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.792 0.820 0.933 1"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size = "0.03 0.03 0.01"/>
+      </geometry>
+    </collision>
+  </link>       
+  
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>         
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  
+  <link name="gps_link">
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0"
+      iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+    
+    <visual>
+      <geometry>
+        <box size="0.05 0.05 0.02"/>
+      </geometry>
+      <material name="">
+        <color rgba="0.792 0.820 0.933 1"/>
+      </material>
+    </visual>
+    
+    <collision>
+      <geometry>
+        <box size="0.05 0.05 0.02"/>
+      </geometry>
+    </collision>
+  </link> 
+
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>         
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+  
+  <link name="lidar_link">
+    <inertial>
+      <origin xyz="7.14081571651093E-14 4.89608353859694E-14 -0.0235714285721134" rpy="0 0 0"/>
+      <mass value="0.263893782901543"/>
+      <inertia ixx="0.000200209211823772" ixy="-7.88860905221012E-31" ixz="-5.28995346614825E-18"
+      iyy="0.000200209211823772" iyz="2.04396983609088E-17" izz="0.000324212361850467"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="package://rover_description/meshes/lidar.STL"/></geometry>
+      <material name="">
+        <color rgba="0.792 0.820 0.933 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="package://rover_description/meshes/lidar.STL"/></geometry>
+    </collision>
+  </link>  
+                         
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>         
+    <origin xyz="0.2 0 0.2" rpy="-0.3 0 -1.5708"/>
   </joint>
 </robot>

@@ -12,8 +12,10 @@ Panels:
         - /LaserScan1
         - /LaserScan1/Topic1
         - /Odometry1
+        - /Image1
+        - /Image2
       Splitter Ratio: 0.5
-    Tree Height: 437
+    Tree Height: 236
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -107,6 +109,21 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        gps_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
@@ -142,6 +159,12 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
+        gps_link:
+          Value: true
+        imu_link:
+          Value: true
+        lidar_link:
+          Value: true
       Marker Scale: 1
       Name: TF
       Show Arrows: true
@@ -165,6 +188,12 @@ Visualization Manager:
             RCam_link:
               {}
             RF_link:
+              {}
+            gps_link:
+              {}
+            imu_link:
+              {}
+            lidar_link:
               {}
       Update Interval: 0
       Value: true
@@ -241,6 +270,34 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /odom
       Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /left_camera/image
+      Value: true
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /right_camera/image
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -288,10 +345,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.49499940872192383
+      Pitch: 0.27999961376190186
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 3.1218433380126953
+      Yaw: 3.4568467140197754
     Saved: ~
 Window Geometry:
   Displays:
@@ -299,7 +356,9 @@ Window Geometry:
   Height: 1011
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd0000000100000000000001c900000399fc0200000002fb000000100044006900730070006c006100790073010000003d000001f2000000c900fffffffb0000000a005600690065007700730100000235000001a1000000a400ffffff0000056f0000039900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Image:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000001c900000399fc0200000004fb000000100044006900730070006c006100790073010000003d00000129000000c900fffffffb0000000a00560069006500770073010000016c000000f8000000a400fffffffb0000000a0049006d006100670065010000026a0000009c0000001600fffffffb0000000a0049006d006100670065010000030c000000ca0000001600ffffff0000056f0000039900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
   Width: 1854

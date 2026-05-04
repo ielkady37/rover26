@@ -9,12 +9,9 @@ from ament_index_python.packages import get_package_share_directory, get_package
 
 def generate_launch_description():
 
-    urdf_path = os.path.join(get_package_share_path('rover_description'),
-                             'urdf', 'rover.urdf')
-    rviz_config_path = os.path.join(get_package_share_path('rover_description'),
-                                    'rviz', 'rover_config.rviz')
-    share_root = os.path.dirname(get_package_share_directory('rover_description'))
-    
+    urdf_path = os.path.join(get_package_share_path('rover_description'), 'urdf', 'rover.urdf.xacro')
+    rviz_config_path = os.path.join(get_package_share_path('rover_description'), 'rviz', 'rover_config.rviz')
+    share_root = os.path.dirname(get_package_share_directory('rover_description'))  
     robot_description = ParameterValue(Command(['xacro ', urdf_path]), value_type=str)
 
     robot_state_publisher_node = Node(

@@ -1,0 +1,395 @@
+<?xml version="1.0" ?>
+<sdf version="1.8">
+  <world name="tight_lane_world">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <light name="sun" type="directional">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.85 1</diffuse>
+      <specular>0 0 0 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="col">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+        </collision>
+        <visual name="vis">
+          <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
+          <material><ambient>0.15 0.15 0.15 1</ambient><diffuse>0.15 0.15 0.15 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!--
+      Rectangular lane loop
+      ─────────────────────
+      Corner pivot centres:  SW=(1.5,1.5)  SE=(10.5,1.5)  NE=(10.5,10.5)  NW=(1.5,10.5)
+      Inner arc radius : 1.5 m
+      Lane width       : 1.2 m  →  outer arc radius = 2.7 m
+      Straights (length 9 m each):
+        Bottom  y_inner= 0.0  y_outer=-1.2   x: 1.5→10.5
+        Right   x_inner=12.0  x_outer=13.2   y: 1.5→10.5
+        Top     y_inner=12.0  y_outer=13.2   x: 10.5→1.5
+        Left    x_inner= 0.0  x_outer=-1.2   y: 10.5→1.5
+      Each corner = 8 segments × 11.25° = exactly 90°
+      Segment chord: inner=0.2941 m, outer=0.5293 m
+    -->
+
+    <model name="lane_system">
+      <static>true</static>
+      <pose>0 0 0.005 0 0 0</pose>
+
+      <!-- ═══════════════════════════ STRAIGHTS ═══════════════════════════ -->
+
+      <link name="straight_bottom">
+        <visual name="inner"><pose>6.0  0.0 0  0 0 0</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="outer"><pose>6.0 -1.2 0  0 0 0</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="straight_right">
+        <visual name="inner"><pose>12.0 6.0 0  0 0 1.5708</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="outer"><pose>13.2 6.0 0  0 0 1.5708</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="straight_top">
+        <visual name="inner"><pose>6.0 12.0 0  0 0 3.1416</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="outer"><pose>6.0 13.2 0  0 0 3.1416</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="straight_left">
+        <visual name="inner"><pose> 0.0 6.0 0  0 0 4.7124</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="outer"><pose>-1.2 6.0 0  0 0 4.7124</pose>
+          <geometry><box><size>9.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════ CORNER SW  (pivot 1.5, 1.5  |  sweep 180°→270°) ═══════════════════════════ -->
+
+      <link name="c_SW_inner">
+        <visual name="s0"><pose>0.0072 1.3530 0  0 0 4.8106</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>0.0646 1.0646 0  0 0 5.0069</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>0.1771 0.7929 0  0 0 5.2033</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>0.3405 0.5484 0  0 0 5.3996</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>0.5484 0.3405 0  0 0 5.5960</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>0.7929 0.1771 0  0 0 5.7923</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>1.0646 0.0646 0  0 0 5.9887</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>1.3530 0.0072 0  0 0 6.1850</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="c_SW_outer">
+        <visual name="s0"><pose>-1.1870  1.2354 0  0 0 4.8106</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>-1.0837  0.7162 0  0 0 5.0069</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>-0.8812  0.2272 0  0 0 5.2033</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-0.5871 -0.2129 0  0 0 5.3996</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-0.2129 -0.5871 0  0 0 5.5960</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose> 0.2272 -0.8812 0  0 0 5.7923</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose> 0.7162 -1.0837 0  0 0 5.9887</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose> 1.2354 -1.1870 0  0 0 6.1850</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════ CORNER SE  (pivot 10.5, 1.5  |  sweep 270°→360°) ═══════════════════════════ -->
+
+      <link name="c_SE_inner">
+        <visual name="s0"><pose>10.6470  0.0072 0  0 0 6.3814</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>10.9354  0.0646 0  0 0 6.5777</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>11.2071  0.1771 0  0 0 6.7741</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>11.4516  0.3405 0  0 0 6.9704</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>11.6595  0.5484 0  0 0 7.1668</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>11.8229  0.7929 0  0 0 7.3631</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>11.9354  1.0646 0  0 0 7.5595</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>11.9928  1.3530 0  0 0 7.7558</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="c_SE_outer">
+        <visual name="s0"><pose>10.7646 -1.1870 0  0 0 6.3814</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>11.2838 -1.0837 0  0 0 6.5777</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>11.7728 -0.8812 0  0 0 6.7741</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>12.2129 -0.5871 0  0 0 6.9704</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>12.5871 -0.2129 0  0 0 7.1668</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>12.8812  0.2272 0  0 0 7.3631</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>13.0837  0.7162 0  0 0 7.5595</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>13.1870  1.2354 0  0 0 7.7558</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════ CORNER NE  (pivot 10.5, 10.5  |  sweep 0°→90°) ═══════════════════════════ -->
+
+      <link name="c_NE_inner">
+        <visual name="s0"><pose>11.9928 10.6470 0  0 0 1.6690</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>11.9354 10.9354 0  0 0 1.8653</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>11.8229 11.2071 0  0 0 2.0617</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>11.6595 11.4516 0  0 0 2.2580</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>11.4516 11.6595 0  0 0 2.4544</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>11.2071 11.8229 0  0 0 2.6507</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>10.9354 11.9354 0  0 0 2.8471</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>10.6470 11.9928 0  0 0 3.0434</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="c_NE_outer">
+        <visual name="s0"><pose>13.1870 10.7646 0  0 0 1.6690</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>13.0837 11.2838 0  0 0 1.8653</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>12.8812 11.7728 0  0 0 2.0617</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>12.5871 12.2129 0  0 0 2.2580</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>12.2129 12.5871 0  0 0 2.4544</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>11.7728 12.8812 0  0 0 2.6507</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>11.2838 13.0837 0  0 0 2.8471</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>10.7646 13.1870 0  0 0 3.0434</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════ CORNER NW  (pivot 1.5, 10.5  |  sweep 90°→180°) ═══════════════════════════ -->
+
+      <link name="c_NW_inner">
+        <visual name="s0"><pose>1.3530 11.9928 0  0 0 3.2398</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>1.0646 11.9354 0  0 0 3.4361</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>0.7929 11.8229 0  0 0 3.6325</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>0.5484 11.6595 0  0 0 3.8288</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>0.3405 11.4516 0  0 0 4.0252</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>0.1771 11.2071 0  0 0 4.2215</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>0.0646 10.9354 0  0 0 4.4179</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>0.0072 10.6470 0  0 0 4.6142</pose><geometry><box><size>0.2941 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <link name="c_NW_outer">
+        <visual name="s0"><pose> 1.2354 13.1870 0  0 0 3.2398</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose> 0.7162 13.0837 0  0 0 3.4361</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose> 0.2272 12.8812 0  0 0 3.6325</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-0.2129 12.5871 0  0 0 3.8288</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-0.5871 12.2129 0  0 0 4.0252</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>-0.8812 11.7728 0  0 0 4.2215</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>-1.0837 11.2838 0  0 0 4.4179</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>-1.1870 10.7646 0  0 0 4.6142</pose><geometry><box><size>0.5293 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+    </model>
+  </world>
+</sdf>
+
+    <!--
+      Lane layout (all units in metres):
+      
+      Coordinate system: +X = right, +Y = up (in Gazebo top-down view)
+
+      straight1 : travels +X, y_left=+0.6, y_right=-0.6,  x = 0..12
+      corner1   : SE turn (+X → +Y), centre=(12, 1.8), r_inner=1.2, r_outer=2.4
+      straight2 : travels +Y, x_left=13.2, x_right=14.4,  y = 1.8..13.8
+      corner2   : NE turn (+Y → -X), centre=(12, 13.8),   r_inner=1.2, r_outer=2.4
+      straight3 : travels -X, y_left=15.0, y_right=16.2,  x = 12..0
+      corner3   : NW turn (-X → -Y), centre=(0,  13.8),   r_inner=1.2, r_outer=2.4
+      straight4 : travels -Y, x_left=-1.2, x_right=-2.4,  y = 13.8..1.8
+      corner4   : SW turn (-Y → +X), centre=(0,  1.8),    r_inner=1.2, r_outer=2.4
+      (closes back to straight1 start)
+
+      Each curved corner is approximated by 8 box segments per wall
+      (45-degree arc segments give smooth-looking 90° turns).
+      Segment poses are computed at angles: 0°, 11.25°, 22.5°, 33.75°,
+      45°, 56.25°, 67.5°, 78.75°  (centres of each 11.25° slice).
+      Box size along arc ≈ r * sin(11.25°/2)*2 * 2 ≈ r * 0.196 (chord length),
+      width = 0.06 m (line thickness), height = 0.01 m (flat on ground).
+
+      White material: ambient/diffuse = 1 1 1 1
+    -->
+
+    <model name="lane_system"><static>true</static><pose>0 0 0.005 0 0 0</pose>
+
+      <!-- ═══════════════════════════════════════════════════
+           STRAIGHT 1  (+X direction, y = ±0.6, x = 0 → 12)
+           ═══════════════════════════════════════════════════ -->
+      <link name="straight1">
+        <!-- left wall  (y = +0.6) -->
+        <visual name="l"><pose>6 0.6 0 0 0 0</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <!-- right wall (y = -0.6) -->
+        <visual name="r"><pose>6 -0.6 0 0 0 0</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           CORNER 1  (+X → +Y)   centre = (12, 1.8)
+           Inner wall r=1.2  (left lane wall)
+           Outer wall r=2.4  (right lane wall)
+           Sweep: 270° → 360° (i.e. from -Y axis toward +X axis)
+           Segment centre angles from +X axis: 270+k*11.25 for k=0..7
+           In standard math: angles -90°..-0° (equivalently 270°..360°)
+           ═══════════════════════════════════════════════════ -->
+
+      <!-- Inner arc (r=1.2): segment centres at angle θ from +X, 
+           world pos = centre + r*(cos θ, sin θ)
+           box yaw = θ + 90° (tangent direction)
+           θ values (deg): -84.375 -73.125 -61.875 -50.625 -39.375 -28.125 -16.875 -5.625
+           = radians:       -1.473  -1.276  -1.080  -0.883  -0.687  -0.491  -0.294  -0.098
+           r*sin(11.25°/2)*2 = chord ≈ 1.2*0.1960 = 0.235 → use 0.24 for slight overlap
+      -->
+      <link name="c1_inner">
+        <visual name="s0"><pose>12.115 0.607 0  0 0  0.524</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>12.346 0.831 0  0 0  0.720</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>12.548 1.094 0  0 0  0.916</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>12.703 1.384 0  0 0  1.113</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>12.807 1.690 0  0 0  1.309</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>12.852 2.000 0  0 0  1.505</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>12.831 2.306 0  0 0  1.701</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>12.748 2.593 0  0 0  1.898</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- Outer arc (r=2.4): chord ≈ 2.4*0.1960 = 0.470 → use 0.47 -->
+      <link name="c1_outer">
+        <visual name="s0"><pose>12.230 0.614 0  0 0  0.524</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>12.692 1.062 0  0 0  0.720</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>13.096 1.588 0  0 0  0.916</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>13.406 2.168 0  0 0  1.113</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>13.614 2.780 0  0 0  1.309</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>13.704 3.400 0  0 0  1.505</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>13.662 4.012 0  0 0  1.701</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>13.496 4.586 0  0 0  1.898</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           STRAIGHT 2  (+Y direction, x = 13.2 / 14.4, y = 1.8 → 13.8)
+           ═══════════════════════════════════════════════════ -->
+      <link name="straight2">
+        <visual name="l"><pose>13.2 7.8 0  0 0 1.5708</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="r"><pose>14.4 7.8 0  0 0 1.5708</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           CORNER 2  (+Y → -X)   centre = (12, 13.8)
+           Sweep: 0° → 90°  (from +X axis toward +Y axis, but travelling left)
+           Inner wall (right of travel = east side, x=13.2): r=1.2
+           Outer wall (left of travel = west side, x=14.4): r=2.4
+           θ values (deg): 5.625  16.875  28.125  39.375  50.625  61.875  73.125  84.375
+           ═══════════════════════════════════════════════════ -->
+      <link name="c2_inner">
+        <visual name="s0"><pose>13.193 13.918 0  0 0  1.669</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>13.148 14.124 0  0 0  1.865</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>13.036 14.314 0  0 0  2.062</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>12.861 14.479 0  0 0  2.258</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>12.634 14.607 0  0 0  2.454</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>12.366 14.692 0  0 0  2.651</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>12.069 14.726 0  0 0  2.847</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>11.757 14.705 0  0 0  3.043</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+      <link name="c2_outer">
+        <visual name="s0"><pose>14.386 13.836 0  0 0  1.669</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>14.296 14.248 0  0 0  1.865</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>14.072 14.628 0  0 0  2.062</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>13.722 14.958 0  0 0  2.258</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>13.268 15.214 0  0 0  2.454</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>12.732 15.384 0  0 0  2.651</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>12.138 15.452 0  0 0  2.847</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>11.514 15.410 0  0 0  3.043</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           STRAIGHT 3  (-X direction, y = 15.0 / 16.2, x = 12 → 0)
+           ═══════════════════════════════════════════════════ -->
+      <link name="straight3">
+        <visual name="l"><pose>6 15.0 0  0 0 3.1416</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="r"><pose>6 16.2 0  0 0 3.1416</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           CORNER 3  (-X → -Y)   centre = (0, 13.8)
+           Sweep: 90° → 180°
+           Inner wall (right of travel = north, y=15.0): r=1.2
+           Outer wall (left of travel = south, y=16.2): r=2.4
+           θ values (deg): 95.625 106.875 118.125 129.375 140.625 151.875 163.125 174.375
+           ═══════════════════════════════════════════════════ -->
+      <link name="c3_inner">
+        <visual name="s0"><pose>-0.118 14.918 0  0 0  2.816</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>-0.346 15.131 0  0 0  3.012</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>-0.548 15.294 0  0 0  3.209</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-0.703 15.384 0  0 0  3.405</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-0.807 15.390 0  0 0  3.601</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>-0.852 15.310 0  0 0  3.797</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>-0.831 15.150 0  0 0  3.994</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>-0.748 14.925 0  0 0  4.190</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+      <link name="c3_outer">
+        <visual name="s0"><pose>-0.236 16.036 0  0 0  2.816</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>-0.692 16.262 0  0 0  3.012</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>-1.096 16.388 0  0 0  3.209</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-1.406 16.368 0  0 0  3.405</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-1.614 16.180 0  0 0  3.601</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>-1.704 15.820 0  0 0  3.797</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>-1.662 15.388 0  0 0  3.994</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose>-1.496 14.950 0  0 0  4.190</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           STRAIGHT 4  (-Y direction, x = -1.2 / -2.4, y = 13.8 → 1.8)
+           ═══════════════════════════════════════════════════ -->
+      <link name="straight4">
+        <visual name="l"><pose>-1.2 7.8 0  0 0 4.7124</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="r"><pose>-2.4 7.8 0  0 0 4.7124</pose>
+          <geometry><box><size>12.0 0.06 0.01</size></box></geometry>
+          <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+      <!-- ═══════════════════════════════════════════════════
+           CORNER 4  (-Y → +X)   centre = (0, 1.8)
+           Sweep: 180° → 270°
+           Inner wall (right of travel = west, x=-1.2): r=1.2
+           Outer wall (left of travel = east, x=-2.4): r=2.4
+           θ values (deg): 185.625 196.875 208.125 219.375 230.625 241.875 253.125 264.375
+           ═══════════════════════════════════════════════════ -->
+      <link name="c4_inner">
+        <visual name="s0"><pose>-1.193 1.682 0  0 0  3.963</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>-1.148 1.476 0  0 0  4.160</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>-1.036 1.286 0  0 0  4.356</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-0.861 1.121 0  0 0  4.552</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-0.634 0.993 0  0 0  4.749</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>-0.366 0.908 0  0 0  4.945</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>-0.069 0.874 0  0 0  5.141</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose> 0.243 0.895 0  0 0  5.338</pose><geometry><box><size>0.235 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+      <link name="c4_outer">
+        <visual name="s0"><pose>-2.386 1.564 0  0 0  3.963</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s1"><pose>-2.296 1.152 0  0 0  4.160</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s2"><pose>-2.072 0.772 0  0 0  4.356</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s3"><pose>-1.722 0.442 0  0 0  4.552</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s4"><pose>-1.268 0.186 0  0 0  4.749</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s5"><pose>-0.732 0.016 0  0 0  4.945</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s6"><pose>-0.138 -0.052 0  0 0  5.141</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+        <visual name="s7"><pose> 0.486 -0.010 0  0 0  5.338</pose><geometry><box><size>0.470 0.06 0.01</size></box></geometry><material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material></visual>
+      </link>
+
+    </model>
+  </world>
+</sdf>
