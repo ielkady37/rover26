@@ -107,6 +107,7 @@ class AutonomousNavigationNode(LifecycleNode):
             cmd_dto = self.navigation_service.calculate_from_wheel_speeds(left_norm, right_norm)
 
             if cmd_dto is None:
+                self._log.err("cmd_dto is None. Skipping publish.")
                 return
 
             act_msg = ActuatorCommand()
