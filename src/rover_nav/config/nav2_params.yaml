@@ -100,7 +100,7 @@ controller_server:
     # ── Regulated Pure Pursuit ──────────────────────────────────────────
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
-      desired_linear_vel: 0.5            # [m/s] cruise speed
+      desired_linear_vel: 0.5            # TO-BE-EDITED [m/s] cruise speed
       lookahead_dist: 0.6
       min_lookahead_dist: 0.3
       max_lookahead_dist: 0.9
