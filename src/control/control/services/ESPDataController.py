@@ -67,9 +67,7 @@ ActuatorPacket layout (19 bytes, little-endian, #pragma pack(1)):
 """
 import struct
 import time
-import smbus2
-from control.services.SPIService import SPIService
-from control.services.I2CService import I2CService
+from control.interface.iCommunicationProtocol import iCommunicationProtocol
 from control.DTOs.SensorData import SensorData
 from control.DTOs.ActuatorCommand import ActuatorCommand
 from control.exceptions.SensorInitializationError import SensorInitializationError
@@ -110,31 +108,30 @@ _ACT_CONTRACT_FIELDS: list[tuple[str, int]] = [
 ]
 
 
-def _xor_checksum(data: bytes) -> int:
-    cs = 0
-    for b in data:
-        cs ^= b
-    return cs
-
-
 class ESPDataController:
-    """Owns both ESP32 links: SPI sensor reads and I2C actuator writes.
+    """Single-channel ESP32 link controller.
+
+    Instantiate once per transport; ESPBridgeNode creates two instances:
 
     Usage
     ─────
-        ctrl = ESPDataController(
-            spi_comm={"bus": 0, "device": 0},
-            i2c_comm={"bus": 1, "address": 0x10},
-        )
-        ctrl.initialize()               # opens SPI + I2C, exchanges contracts
-        data: SensorData = ctrl.read()  # call repeatedly in reader thread
-        ctrl.write(ActuatorCommand())   # call on /esp_tx messages
-        ctrl.close()
+        from control.services.SPIService import SPIService
+        from control.services.I2CService import I2CService
+
+        spi_ctrl = ESPDataController(SPIService({"bus": 0, "device": 0}))
+        i2c_ctrl = ESPDataController(I2CService({"bus": 1, "address": 0x10}))
+
+        spi_ctrl.initialize()    # open SPI
+        spi_ctrl.read_contract() # read one-time contract from sensor ESP32
+        i2c_ctrl.initialize()    # open I2C
+        i2c_ctrl.send_contract() # send one-time contract to actuator ESP32
+
+        data = spi_ctrl.receive()          # call repeatedly in reader thread
+        i2c_ctrl.write(ActuatorCommand())  # call on /esp_tx messages
     """
 
-    def __init__(self, spi_comm: dict, i2c_comm: dict) -> None:
-        self._spi = SPIService(spi_comm)
-        self._i2c = I2CService(i2c_comm)
+    def __init__(self, comm: iCommunicationProtocol) -> None:
+        self._comm = comm
         self._packet_size: int = PACKET_SIZE
         self._packet_start_byte: int = PACKET_START_BYTE
         self._fields: list[str] = []
@@ -143,30 +140,115 @@ class ESPDataController:
     # public API
 
     def initialize(self) -> None:
-        """Open SPI + I2C and exchange the one-time contracts with both ESP32s."""
-        self._spi.initialize()
-        self._read_contract()
-        self._i2c.initialize()
-        self._send_act_contract()
+        """Open the underlying transport."""
+        self._comm.initialize()
 
-    def read(self) -> SensorData:
-        """Read and parse one sensor packet.
+    def initialize_with_retry(
+        self,
+        max_attempts: int = 10,
+        retry_delay: float = 1.0,
+        on_retry=None,
+        on_success=None,
+    ) -> None:
+        """Open the transport with retry on failure.
 
-        Each call issues exactly one aligned xfer2 (one CS pulse = one ESP32
-        transaction).  With the ESP32's double-buffered slave, a fresh 62-byte
-        packet is always pre-queued.  If the start byte or checksum is wrong
-        this tick is simply skipped — the caller retries on the next timer
-        callback without issuing any extra CS pulses.
+        Args:
+            max_attempts: Total number of attempts before giving up.
+            retry_delay:  Seconds to wait between attempts.
+            on_retry:     Optional callable(attempt, max_attempts, exc) called
+                          before each retry (e.g. node.get_logger().warn).
+            on_success:   Optional callable(attempt, max_attempts) called once
+                          on success.
+
+        Raises:
+            SensorInitializationError: If all attempts are exhausted.
         """
-        raw = bytes(self._spi._spi.xfer2([0x00] * self._packet_size))
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self._comm.initialize()
+                if on_success:
+                    on_success(attempt, max_attempts)
+                return
+            except Exception as exc:
+                if attempt < max_attempts:
+                    if on_retry:
+                        on_retry(attempt, max_attempts, exc)
+                    time.sleep(retry_delay)
+                else:
+                    raise SensorInitializationError(
+                        f"Failed to initialize after {max_attempts} attempts: {exc}"
+                    )
+
+    def read_contract(self, max_attempts: int = 15, retry_delay: float = 0.3) -> None:
+        """Read the one-time contract packet from the transport (SPI / sensor side).
+
+        Three scenarios handled:
+          A) Pi starts first  — raw[0] == data_contract → update_contract_struct().
+          B) ESP32 was first  — raw[0] == PACKET_START_BYTE → apply defaults.
+          C) ESP32 not ready  — other byte → retry; fall back to defaults on timeout.
+        """
+        for _ in range(max_attempts):
+            try:
+                raw = self._comm.receive(CONTRACT_PACKET_SIZE)
+            except SensorReadError:
+                time.sleep(retry_delay)
+                continue
+
+            if raw[0] == self._comm.data_contract:
+                self.update_contract_struct(raw)
+                return
+
+            if raw[0] == PACKET_START_BYTE:
+                # Contract was already sent before we connected.
+                self._apply_defaults()
+                return
+
+            # 0x00 or other: not ready yet → retry
+            time.sleep(retry_delay)
+
+        self._apply_defaults()
+
+    def send_contract(self) -> None:
+        """Build and send the one-time contract packet (I2C / actuator side)."""
+        header = struct.pack(
+            _ACT_CONTRACT_HEADER_FMT,
+            _ACT_CONTRACT_START,
+            len(_ACT_CONTRACT_FIELDS),
+            _ACT_PACKET_SIZE,
+        )
+        fields_bytes = b""
+        for name, bit_width in _ACT_CONTRACT_FIELDS:
+            name_padded = name.encode("ascii").ljust(_ACT_FIELD_NAME_LEN, b"\x00")
+            fields_bytes += struct.pack(_ACT_FIELD_FMT, name_padded, bit_width)
+        payload = header + fields_bytes
+        try:
+            self.send(payload)
+        except SensorReadError as e:
+            raise SensorInitializationError(
+                f"Failed to send actuator contract: {e}"
+            )
+
+    def receive(self) -> SensorData | None:
+        """Read one packet from the transport.
+
+        Returns SensorData for a normal data packet.
+        Returns None if a contract packet arrived mid-stream and was applied
+        via update_contract_struct() (rare after read_contract() is done).
+        Raises SensorReadError on checksum / framing errors — caller retries.
+        """
+        raw = self._comm.receive(self._packet_size)
+        if raw[0] == self._comm.data_contract:
+            self.update_contract_struct(raw)
+            return None
         return self._parse_data_packet(raw)
 
+    def send(self, body: bytes) -> None:
+        """Send *body* through the transport.
+        """
+        self._comm.send(body)
+
     def write(self, cmd: ActuatorCommand) -> None:
-        """Build and send one ActuatorPacket to the actuator ESP32 via I2C."""
-        if self._i2c._bus is None:
-            raise SensorInitializationError(
-                "I2C bus not initialized. Call initialize() first."
-            )
+        """Build and send one ActuatorPacket to the actuator ESP32."""
         body = struct.pack(
             "<BBBfBBfBf",
             _ACT_PACKET_START,
@@ -179,19 +261,13 @@ class ESPDataController:
             int(cmd.laser)        & 0xFF,
             float(cmd.servo),
         )
-        packet = body + bytes([_xor_checksum(body)])
-        try:
-            msg = smbus2.i2c_msg.write(self._i2c._address, list(packet))
-            self._i2c._bus.i2c_rdwr(msg)
-        except Exception as e:
-            raise SensorReadError(f"I2C actuator write failed: {e}")
+        self.send(body)
 
     def close(self) -> None:
-        self._spi.close()
-        self._i2c.close()
+        self._comm.close()
 
     @property
-    def ticks_per_rev(self) -> int:
+    def get_ticks_per_rev(self) -> int:
         """Encoder ticks per full motor revolution (from contract)."""
         return self._ticks_per_rev
 
@@ -202,59 +278,8 @@ class ESPDataController:
 
     # internal
 
-    def _read_contract(self, max_attempts: int = 15, retry_delay: float = 0.3) -> None:
-        """Read the one-time contract packet from the ESP32.
-
-        Three scenarios are handled:
-          A) Pi starts first  — raw[0] == 0xAB → valid contract, parse it.
-          B) ESP32 was first  — raw[0] == 0xAA → contract was already sent.
-               The 202-byte Pi transfer consumed exactly ONE 62-byte ESP32
-               transaction (MISO holds its last bit for bytes 62-201).
-               Transaction alignment is preserved; use hardcoded defaults.
-          C) ESP32 not ready  — raw[0] == 0x00 or other garbage → retry.
-               After max_attempts exhausted, fall back to defaults so the
-               node never crashes on startup.
-        """
-        for attempt in range(max_attempts):
-            raw = bytes(self._spi._spi.xfer2([0x00] * CONTRACT_PACKET_SIZE))
-
-            if raw[0] == CONTRACT_START_BYTE:
-                if _xor_checksum(raw[:-1]) != raw[-1]:
-                    # Checksum mismatch — line noise during contract, retry
-                    time.sleep(retry_delay)
-                    continue
-                self._parse_contract(raw)
-                return
-
-            if raw[0] == PACKET_START_BYTE:
-                # Contract was already sent before we connected.
-                # 202-byte transfer consumed one 62-byte ESP32 transaction;
-                # MISO held the last MISO bit for bytes 62-201.
-                # The next 62-byte read() call will get a fresh, aligned packet.
-                self._apply_defaults()
-                return
-
-            # 0x00 or any other byte: ESP32 SPI slave not ready yet → wait and retry
-            time.sleep(retry_delay)
-
-        # Exhausted all retries — run with defaults so the node starts anyway
-        self._apply_defaults()
-
-    def _apply_defaults(self) -> None:
-        """Populate fields with the hardcoded defaults matching Connection.h."""
-        self._packet_size        = PACKET_SIZE
-        self._packet_start_byte  = PACKET_START_BYTE
-        self._ticks_per_rev      = 0
-        self._fields = [
-            "yaw", "pitch", "roll",
-            "qx", "qy", "qz", "qw",
-            "gx", "gy", "gz",
-            "ax", "ay", "az",
-            "enc1_rev", "enc2_rev",
-        ]
-
-    def _parse_contract(self, raw: bytes) -> None:
-        """Extract and store all fields from a validated ContractPacket."""
+    def update_contract_struct(self, raw: bytes) -> None:
+        """Parse a validated ContractPacket and update internal packet state."""
         header_size = struct.calcsize(_CONTRACT_HEADER_FMT)
         _, field_count, data_packet_size, ticks_per_rev, packet_start_byte = struct.unpack_from(
             _CONTRACT_HEADER_FMT, raw, 0
@@ -274,6 +299,19 @@ class ESPDataController:
         self._ticks_per_rev      = ticks_per_rev
         self._fields             = fields
 
+    def _apply_defaults(self) -> None:
+        """Populate fields with the hardcoded defaults matching Connection.h."""
+        self._packet_size        = PACKET_SIZE
+        self._packet_start_byte  = PACKET_START_BYTE
+        self._ticks_per_rev      = 0
+        self._fields = [
+            "yaw", "pitch", "roll",
+            "qx", "qy", "qz", "qw",
+            "gx", "gy", "gz",
+            "ax", "ay", "az",
+            "enc1_rev", "enc2_rev",
+        ]
+
     def _parse_data_packet(self, raw: bytes) -> SensorData:
         if len(raw) != self._packet_size:
             raise SensorReadError(
@@ -284,13 +322,6 @@ class ESPDataController:
             raise SensorReadError(
                 f"Expected data start byte 0x{self._packet_start_byte:02X}, "
                 f"got 0x{raw[0]:02X}"
-            )
-
-        if _xor_checksum(raw[:-1]) != raw[-1]:
-            expected = _xor_checksum(raw[:-1])
-            raise SensorReadError(
-                f"Data packet checksum failed: expected 0x{expected:02X}, "
-                f"got 0x{raw[-1]:02X}"
             )
 
         _, yaw, pitch, roll, qx, qy, qz, qw, gx, gy, gz, ax, ay, az, enc1, enc2, _ = \
@@ -304,29 +335,3 @@ class ESPDataController:
             enc1_net_rev=enc1,
             enc2_net_rev=enc2,
         )
-
-    def _send_act_contract(self) -> None:
-        """Send the one-time 109-byte ContractPacket to the actuator ESP32."""
-        if self._i2c._bus is None:
-            raise SensorInitializationError(
-                "I2C bus not initialized. Call initialize() first."
-            )
-        header = struct.pack(
-            _ACT_CONTRACT_HEADER_FMT,
-            _ACT_CONTRACT_START,
-            len(_ACT_CONTRACT_FIELDS),
-            _ACT_PACKET_SIZE,
-        )
-        fields_bytes = b""
-        for name, bit_width in _ACT_CONTRACT_FIELDS:
-            name_padded = name.encode("ascii").ljust(_ACT_FIELD_NAME_LEN, b"\x00")
-            fields_bytes += struct.pack(_ACT_FIELD_FMT, name_padded, bit_width)
-        payload  = header + fields_bytes
-        contract = payload + bytes([_xor_checksum(payload)])
-        try:
-            msg = smbus2.i2c_msg.write(self._i2c._address, list(contract))
-            self._i2c._bus.i2c_rdwr(msg)
-        except Exception as e:
-            raise SensorInitializationError(
-                f"Failed to send actuator contract to 0x{self._i2c._address:02X}: {e}"
-            )

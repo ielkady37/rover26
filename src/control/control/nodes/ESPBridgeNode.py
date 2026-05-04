@@ -48,6 +48,8 @@ from tf2_ros import TransformBroadcaster
 from interfaces.msg import EulerAngles, EncoderRevolutions, ActuatorCommand as ActuatorCommandMsg
 
 from control.services.ESPDataController import ESPDataController
+from control.services.SPIService import SPIService
+from control.services.I2CService import I2CService
 from control.DTOs.SensorData import SensorData
 from control.DTOs.ActuatorCommand import ActuatorCommand, MotorCommand
 from control.exceptions.SensorInitializationError import SensorInitializationError
@@ -100,14 +102,32 @@ class ESPBridgeNode(Node):
             "bus":     self.get_parameter("i2c_bus").value,
             "address": self.get_parameter("i2c_address").value,
         }
-        self._ctrl = ESPDataController(spi_comm, i2c_comm)
+        self._spi_ctrl = ESPDataController(SPIService(spi_comm))
+        self._i2c_ctrl = ESPDataController(I2CService(i2c_comm))
         try:
-            self._ctrl.initialize()
+            self._spi_ctrl.initialize_with_retry(
+                on_retry=lambda attempt, total, exc: self.get_logger().warn(
+                    f"SPI init attempt {attempt}/{total} failed: {exc} — retrying..."
+                ),
+                on_success=lambda attempt, total: self.get_logger().info(
+                    f"SPI initialized on attempt {attempt}/{total}"
+                ),
+            )
+            self._spi_ctrl.read_contract()
+            self._i2c_ctrl.initialize_with_retry(
+                on_retry=lambda attempt, total, exc: self.get_logger().warn(
+                    f"I2C init attempt {attempt}/{total} failed: {exc} — retrying..."
+                ),
+                on_success=lambda attempt, total: self.get_logger().info(
+                    f"I2C initialized on attempt {attempt}/{total}"
+                ),
+            )
+            self._i2c_ctrl.send_contract()
             self.get_logger().info(
                 f"ESP32 contracts exchanged — "
-                f"SPI fields={self._ctrl.fields}, "
-                f"ticks_per_rev={self._ctrl.ticks_per_rev}, "
-                f"packet_size={self._ctrl._packet_size} bytes | "
+                f"SPI fields={self._spi_ctrl.fields}, "
+                f"ticks_per_rev={self._spi_ctrl.ticks_per_rev}, "
+                f"packet_size={self._spi_ctrl._packet_size} bytes | "
                 f"I2C actuator 0x{i2c_comm['address']:02X} ready"
             )
         except SensorInitializationError as e:
@@ -155,7 +175,7 @@ class ESPBridgeNode(Node):
             servo=float(msg.servo),
         )
         try:
-            self._ctrl.write(cmd)
+            self._i2c_ctrl.write(cmd)
         except SensorReadError as e:
             self.get_logger().warn(
                 f"Actuator write failed: {e}",
@@ -167,14 +187,11 @@ class ESPBridgeNode(Node):
     def _reader_loop(self) -> None:
         while self._running:
             try:
-                data = self._ctrl.read()
-                with self._data_lock:
-                    self._latest_data = data
-            except SensorReadError as e:
-                # self.get_logger().warn(
-                #     f"SPI read error: {e}",
-                #     throttle_duration_sec=5.0,
-                # )
+                data = self._spi_ctrl.receive()
+                if data is not None:
+                    with self._data_lock:
+                        self._latest_data = data
+            except SensorReadError:
                 pass
 
     # timer callback
@@ -300,7 +317,8 @@ class ESPBridgeNode(Node):
     def destroy_node(self) -> None:
         self._running = False
         self._reader_thread.join(timeout=1.0)
-        self._ctrl.close()
+        self._spi_ctrl.close()
+        self._i2c_ctrl.close()
         super().destroy_node()
 
 

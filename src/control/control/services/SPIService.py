@@ -8,6 +8,8 @@ from control.exceptions.SensorReadError import SensorReadError
 
 @implementer(iCommunicationProtocol)
 class SPIService:
+    data_contract: int = 0xAB  # start byte identifying a contract packet
+
     def __init__(self, comm_details: dict) -> None:
         """Setup the requirements to handle SPI communication.
 
@@ -42,15 +44,37 @@ class SPIService:
         except Exception as e:
             raise SensorReadError(f"SPI send failed: {e}")
 
-    def receive(self) -> list:
+    def receive(self, length: int = 1) -> bytes:
         if self._spi is None:
             raise SensorInitializationError("SPI is not initialized. Call initialize() first.")
         try:
-            return self._spi.readbytes(1)
+            raw = bytes(self._spi.xfer2([0x00] * length))
         except Exception as e:
             raise SensorReadError(f"SPI receive failed: {e}")
+        self.validateData(raw)
+        return raw
 
     def close(self) -> None:
         if self._spi is not None:
             self._spi.close()
             self._spi = None
+
+    def validateData(self, data: bytes) -> None:
+        """Validate XOR checksum of a full packet.
+
+        The last byte of *data* must equal the XOR of all preceding bytes.
+        Raises SensorReadError if the checksum does not match.
+        """
+        expected = self.compute_checksum(data[:-1])
+        if expected != data[-1]:
+            raise SensorReadError(
+                f"SPI checksum failed: expected 0x{expected:02X}, got 0x{data[-1]:02X}"
+            )
+
+    @staticmethod
+    def compute_checksum(data: bytes) -> int:
+        """Compute XOR checksum over all bytes in data (for building outgoing packets)."""
+        cs = 0
+        for b in data:
+            cs ^= b
+        return cs

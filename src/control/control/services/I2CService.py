@@ -8,6 +8,8 @@ from control.exceptions.SensorReadError import SensorReadError
 
 @implementer(iCommunicationProtocol)
 class I2CService:
+    data_contract: int = 0xBC  # start byte identifying a contract packet
+
     def __init__(self, comm_details: dict) -> None:
         """Setup the requirements to handle I2C communication.
 
@@ -31,11 +33,15 @@ class I2CService:
                 f"Failed to open I2C bus {self._bus_number}: {e}"
             )
 
-    def send(self, data: list) -> None:
+    def send(self, data: bytes) -> None:
         if self._bus is None:
             raise SensorInitializationError("I2C bus is not initialized. Call initialize() first.")
         try:
-            self._bus.write_i2c_block_data(self._address, self._register, data)
+            packet = data + bytes([self.compute_checksum(data)])
+            msg = smbus2.i2c_msg.write(self._address, list(packet))
+            self._bus.i2c_rdwr(msg)
+        except SensorInitializationError:
+            raise
         except Exception as e:
             raise SensorReadError(f"I2C send failed to address 0x{self._address:02X}: {e}")
 
@@ -51,3 +57,23 @@ class I2CService:
         if self._bus is not None:
             self._bus.close()
             self._bus = None
+
+    def validateData(self, data: bytes) -> None:
+        """Validate XOR checksum of a full packet.
+
+        The last byte of *data* must equal the XOR of all preceding bytes.
+        Raises SensorReadError if the checksum does not match.
+        """
+        expected = self.compute_checksum(data[:-1])
+        if expected != data[-1]:
+            raise SensorReadError(
+                f"I2C checksum failed: expected 0x{expected:02X}, got 0x{data[-1]:02X}"
+            )
+
+    @staticmethod
+    def compute_checksum(data: bytes) -> int:
+        """Compute XOR checksum over all bytes in data (for building outgoing packets)."""
+        cs = 0
+        for b in data:
+            cs ^= b
+        return cs
