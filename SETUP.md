@@ -34,7 +34,22 @@ mkdir -p log/services log/nodes log/mocks log/helpers log/general
 chown -R $USER:$USER log/
 ```
 
-## 5. Source ROS and build `interfaces` first
+## 5. Set up the maps directory
+
+Navigation maps saved by SLAM Toolbox are written to `$ROBOT_MAPS_DIR`. Add
+this to your shell profile so the path is always resolved correctly regardless
+of username or machine:
+
+```bash
+echo 'export ROBOT_MAPS_DIR="$HOME/maps"' >> ~/.bashrc
+source ~/.bashrc
+mkdir -p ~/maps
+```
+
+> The launch files fall back to `~/maps` if the variable is not set, but
+> setting it explicitly is recommended.
+
+## 6. Source ROS and build `interfaces` first
 
 `interfaces` generates the custom ROS message types that `control` depends on,
 so it must be built before the other packages.
@@ -46,14 +61,14 @@ colcon build --packages-select interfaces
 source install/setup.bash
 ```
 
-## 6. Build `utils` and `control`
+## 7. Build `utils` and `control`
 
 ```bash
 colcon build --packages-select utils control --symlink-install
 source install/setup.bash
 ```
 
-## 7. Fix Python package metadata (one-time, Python 3.10+)
+## 8. Fix Python package metadata (one-time, Python 3.10+)
 
 `colcon --symlink-install` creates `.egg-link` files that Python 3.10's
 `importlib.metadata` cannot read. Running `pip install -e` fixes this without
@@ -64,7 +79,7 @@ pip install -e src/utils --no-build-isolation
 pip install -e src/control --no-build-isolation
 ```
 
-## 8. Verify the installation
+## 9. Verify the installation
 
 ```bash
 python3 -c "from utils import RoverLogger, RedisClient, IHealthCheckable; print('utils  OK')"
@@ -73,7 +88,7 @@ python3 -c "from control.services.SystemHealthService import SystemHealthService
 
 Both lines should print `OK` with no errors.
 
-## 9. Launch the health monitoring stack
+## 10. Launch the health monitoring stack
 
 ```bash
 ros2 launch control health_monitoring_test.launch.py
@@ -85,7 +100,7 @@ The launch file will:
 - Start `LoggerNode` + `HealthMonitorNode` after 1 s
 - Start `MockSensorNode` (3 simulated sensors) after 2.5 s
 
-## 10. Verify live data (separate terminals)
+## 11. Verify live data (separate terminals)
 
 Source the workspace in every new terminal:
 
@@ -122,6 +137,7 @@ redis-cli SMEMBERS rover:health:__registry__
 | Python deps | `pip install -r requirements.txt` | psutil, redis-py, PyYAML |
 | `.env.local` | `cp .env.example .env.local` | Launch file crashes without it |
 | Log dirs | `mkdir -p log/{services,nodes,mocks,helpers,general}` | RoverLogger writes here |
+| Maps dir | `echo 'export ROBOT_MAPS_DIR="$HOME/maps"' >> ~/.bashrc && mkdir -p ~/maps` | SLAM map output location |
 | Build interfaces | `colcon build --packages-select interfaces` | Must precede control/utils |
 | Source after build | `source install/setup.bash` | Registers generated types |
 | Build rest | `colcon build … --symlink-install` | |
