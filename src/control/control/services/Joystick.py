@@ -3,12 +3,12 @@
 from multiprocessing.shared_memory import SharedMemory
 import pickle
 import threading
-from utils.services.Configurator import Configurator
+from utils.Configurator import Configurator
 import atexit
 import signal
 import time
-from utils.services.Logger import Logger
-from utils.DTOs.LogSeverity import LogSeverity
+from utils.Logger import RoverLogger
+
 
 class CJoystick:
     _instance = None

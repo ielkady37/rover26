@@ -2,10 +2,10 @@
 import rclpy
 from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import Imu
 
 import time
 from interfaces.msg import ActuatorCommand
+from interfaces.msg import EulerAngles
 from control.services.Navigation import Navigation
 from control.services.PID import PIDController
 from control.services.Joystick import CJoystick
@@ -49,7 +49,7 @@ class ManualNavigationNode(LifecycleNode):
             self.motor_pub = self.create_publisher(ActuatorCommand, '/esp_tx', motor_qos)
 
             euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
-            self.euler_sub = self.create_subscription(Imu, '/euler', self.euler_callback, euler_qos)
+            self.euler_sub = self.create_subscription(EulerAngles, '/euler', self.euler_callback, euler_qos)
 
             timer_period = 1.0 / loop_rate
             self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
@@ -88,7 +88,7 @@ class ManualNavigationNode(LifecycleNode):
         self.publish_safe_stop()
         return TransitionCallbackReturn.SUCCESS
 
-    def euler_callback(self, msg: Imu):
+    def euler_callback(self, msg: EulerAngles):
         try:
             if msg.yaw != msg.yaw: 
                 return
@@ -124,12 +124,12 @@ class ManualNavigationNode(LifecycleNode):
                 return
 
             msg = ActuatorCommand()
-            msg.m2_speed = cmd_dto.left_pwm
-            msg.m2_dir = cmd_dto.left_dir
-            msg.m2_brake = cmd_dto.left_brake
-            msg.m1_speed = cmd_dto.right_pwm
-            msg.m1_dir = cmd_dto.right_dir
-            msg.m1_brake = cmd_dto.right_brake
+            msg.m2_speed = float(cmd_dto.left_pwm)
+            msg.m2_dir = int(cmd_dto.left_dir)
+            msg.m2_brake = int(cmd_dto.left_brake)
+            msg.m1_speed = float(cmd_dto.right_pwm)
+            msg.m1_dir = int(cmd_dto.right_dir)
+            msg.m1_brake = int(cmd_dto.right_brake)
 
             self.motor_pub.publish(msg)
 
@@ -142,6 +142,8 @@ class ManualNavigationNode(LifecycleNode):
             msg = ActuatorCommand()
             msg.m1_brake = 1
             msg.m2_brake = 1
+            msg.m1_speed = 0.0
+            msg.m2_speed = 0.0
             self.motor_pub.publish(msg)
         except Exception as e:
             self._log.err(f"Failed to publish safe stop: {e}")
