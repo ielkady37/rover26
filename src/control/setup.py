@@ -25,6 +25,9 @@ setup(
         'console_scripts': [
             'esp_bridge_node    = control.nodes.ESPBridgeNode:main',
             'esp_actuator_node  = control.nodes.ESPActuatorNode:main',
+            'logger_node = control.nodes.LoggerNode:main',
+            'health_monitor_node = control.nodes.HealthMonitorNode:main',
+            'mock_sensor_node = control.nodes.MockSensorNode:main',
         ],
     },
 )
