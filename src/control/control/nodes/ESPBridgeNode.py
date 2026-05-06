@@ -122,14 +122,29 @@ class ESPBridgeNode(Node):
                     f"I2C initialized on attempt {attempt}/{total}"
                 ),
             )
-            self._i2c_ctrl.send_contract()
-            self.get_logger().info(
-                f"ESP32 contracts exchanged — "
-                f"SPI fields={self._spi_ctrl.fields}, "
-                f"ticks_per_rev={self._spi_ctrl.ticks_per_rev}, "
-                f"packet_size={self._spi_ctrl._packet_size} bytes | "
-                f"I2C actuator 0x{i2c_comm['address']:02X} ready"
-            )
+            try:
+                self._i2c_ctrl.send_contract(
+                    on_retry=lambda attempt, total, exc: self.get_logger().warn(
+                        f"I2C contract send attempt {attempt}/{total} failed: {exc} — retrying..."
+                    ),
+                    on_success=lambda attempt, total: self.get_logger().info(
+                        f"I2C contract sent on attempt {attempt}/{total}"
+                    ),
+                )
+                self._i2c_ready = True
+                self.get_logger().info(
+                    f"ESP32 contracts exchanged — "
+                    f"SPI fields={self._spi_ctrl.fields}, "
+                    f"ticks_per_rev={self._spi_ctrl.ticks_per_rev}, "
+                    f"packet_size={self._spi_ctrl._packet_size} bytes | "
+                    f"I2C actuator 0x{i2c_comm['address']:02X} ready"
+                )
+            except SensorInitializationError as e:
+                self._i2c_ready = False
+                self.get_logger().error(
+                    f"Actuator ESP32 unavailable — I2C contract failed: {e}. "
+                    f"Node will run in sensor-only mode."
+                )
         except SensorInitializationError as e:
             self.get_logger().fatal(f"Failed to initialise ESP32 links: {e}")
             raise
@@ -174,6 +189,12 @@ class ESPBridgeNode(Node):
             laser=int(msg.laser),
             servo=float(msg.servo),
         )
+        if not self._i2c_ready:
+            self.get_logger().warn(
+                "Actuator write skipped — I2C not available.",
+                throttle_duration_sec=5.0,
+            )
+            return
         try:
             self._i2c_ctrl.write(cmd)
         except SensorReadError as e:

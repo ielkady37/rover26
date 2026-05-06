@@ -208,8 +208,26 @@ class ESPDataController:
 
         self._apply_defaults()
 
-    def send_contract(self) -> None:
-        """Build and send the one-time contract packet (I2C / actuator side)."""
+    def send_contract(
+        self,
+        max_attempts: int = 10,
+        retry_delay: float = 1.0,
+        on_retry=None,
+        on_success=None,
+    ) -> None:
+        """Build and send the one-time contract packet (I2C / actuator side).
+
+        Args:
+            max_attempts: Total number of attempts before giving up.
+            retry_delay:  Seconds to wait between attempts.
+            on_retry:     Optional callable(attempt, max_attempts, exc) called
+                          before each retry.
+            on_success:   Optional callable(attempt, max_attempts) called once
+                          on success.
+
+        Raises:
+            SensorInitializationError: If all attempts are exhausted.
+        """
         header = struct.pack(
             _ACT_CONTRACT_HEADER_FMT,
             _ACT_CONTRACT_START,
@@ -221,12 +239,22 @@ class ESPDataController:
             name_padded = name.encode("ascii").ljust(_ACT_FIELD_NAME_LEN, b"\x00")
             fields_bytes += struct.pack(_ACT_FIELD_FMT, name_padded, bit_width)
         payload = header + fields_bytes
-        try:
-            self.send(payload)
-        except SensorReadError as e:
-            raise SensorInitializationError(
-                f"Failed to send actuator contract: {e}"
-            )
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                self.send(payload)
+                if on_success:
+                    on_success(attempt, max_attempts)
+                return
+            except SensorReadError as exc:
+                if attempt < max_attempts:
+                    if on_retry:
+                        on_retry(attempt, max_attempts, exc)
+                    time.sleep(retry_delay)
+                else:
+                    raise SensorInitializationError(
+                        f"Failed to send actuator contract after {max_attempts} attempts: {exc}"
+                    )
 
     def receive(self) -> SensorData | None:
         """Read one packet from the transport.
@@ -267,7 +295,7 @@ class ESPDataController:
         self._comm.close()
 
     @property
-    def get_ticks_per_rev(self) -> int:
+    def ticks_per_rev(self) -> int:
         """Encoder ticks per full motor revolution (from contract)."""
         return self._ticks_per_rev
 
