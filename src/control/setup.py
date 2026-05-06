@@ -26,6 +26,8 @@ setup(
             'logger_node = control.nodes.LoggerNode:main',
             'health_monitor_node = control.nodes.HealthMonitorNode:main',
             'mock_sensor_node = control.nodes.MockSensorNode:main',
+            'manual_navigation_node = control.nodes.ManualNavigationNode:main',
+            'autonomous_navigation_node = control.nodes.AutonomousNavigationNode:main',
         ],
     },
 )
