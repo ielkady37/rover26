@@ -20,5 +20,14 @@ redis>=4.0.0
 # YAML config loading (Configurator)
 PyYAML>=5.4.1
 
+# Interface definitions (IHealthCheckable and other rover interfaces)
+zope.interface>=5.0.0
+
+# I2C communication (e.g. IMU over I2C on Raspberry Pi)
+smbus2>=0.4.0
+
+# SPI communication (e.g. sensors over SPI on Raspberry Pi)
+spidev>=3.5
+
 # --- Development / Test -------------------------------------------------------
 pytest>=7.0.0
