@@ -33,6 +33,7 @@ def generate_launch_description():
         package='control',
         executable='autonomous_navigation_node',
         output="screen",
+        emulate_tty=True,
         name="autonomous_navigation_node"
     )
 
