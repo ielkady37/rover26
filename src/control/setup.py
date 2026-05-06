@@ -23,6 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'joystick_node      = control.nodes.JoystickNode:main',
             'esp_bridge_node    = control.nodes.ESPBridgeNode:main',
             'esp_actuator_node  = control.nodes.ESPActuatorNode:main',
             'logger_node = control.nodes.LoggerNode:main',

@@ -9,7 +9,6 @@ import signal
 import time
 from utils.Logger import RoverLogger
 
-
 class CJoystick:
     _instance = None
     def __new__(cls, *args, **kwargs):
@@ -20,6 +19,7 @@ class CJoystick:
     def __init__(self, is_writer=False,shared_memory_name="joystick_data", buffer_size=1024):
         if not hasattr(self, "_initialized"):  # Ensure __init__ runs only once
             self._initialized = True
+            self._log = RoverLogger()
             self.shared_memory_name = shared_memory_name
             self.buffer_size = buffer_size
             self.is_writer = is_writer  # Distinguish between writer and reader
@@ -35,16 +35,26 @@ class CJoystick:
             try:
                 # Try to attach to an existing shared memory block
                 self.shared_memory = SharedMemory(name=self.shared_memory_name)
-                Logger.logToFile(LogSeverity.INFO, "Shared memory attached successfully.", "CJoystick")
+                self._log.info("Shared memory attached successfully.")
             except FileNotFoundError:
                 # If not found, create a new shared memory block
                 self.shared_memory = SharedMemory(name=self.shared_memory_name, create=True, size=self.buffer_size)
-                self.is_writer = True  # This instance will act as the writer
-                Logger.logToFile(LogSeverity.INFO, "Shared memory created successfully.", "CJoystick")
+                self.is_writer = True  
+                self._log.info("Shared memory created successfully.")
+                
+                # Initializing the block with safe default data
+                default_data = {
+                    "timestamp": time.time(),
+                    "buttons": {},
+                    "axes": {"left_x_axis": 0.0, "left_y_axis": 0.0, "right_x_axis": 0.0, "right_y_axis": 0.0}
+                }
+                serialized_data = self._serialize_data(default_data)
+                self.shared_memory.buf[:len(serialized_data)] = serialized_data
+                self.shared_memory.buf[len(serialized_data):] = b"\x00" * (self.buffer_size - len(serialized_data))
 
             atexit.register(self.cleanup)
-            signal.signal(signal.SIGINT, self._signal_cleanup)
-            signal.signal(signal.SIGTERM, self._signal_cleanup)
+            # signal.signal(signal.SIGINT, self._signal_cleanup)
+            # signal.signal(signal.SIGTERM, self._signal_cleanup)
             self.__constructConstants()
 
     @classmethod
@@ -61,6 +71,7 @@ class CJoystick:
             "button_4": "RIGHTGRIPPER_OPEN"
         }
         """
+        log = RoverLogger()
         joystickButtons = Configurator().fetchData(Configurator.BUTTONS)
         if joystickButtons:
             for button_key, button_name in joystickButtons.items():
@@ -72,7 +83,7 @@ class CJoystick:
                         setattr(cls, button_name, button_number)
                         setattr(cls, f"_{button_number}", button_number)  # Add support for _X button notation
                     except ValueError:
-                        Logger.logToFile(LogSeverity.ERROR, f"Invalid button number format: '{button_key}'", "CJoystick")
+                        log.err(f"Invalid button number format: '{button_key}'")
                         continue  # Skip invalid keys
 
 
@@ -97,7 +108,7 @@ class CJoystick:
             axis_data (list): List containing joystick axis values [left_x, left_y, right_x, right_y].
         """
         if not self.is_writer:
-            Logger.logToFile(LogSeverity.ERROR, "Only the writer instance can update data.", "CJoystick")
+            self._log.err("Only the writer instance can update data.")
             raise PermissionError("Only the writer instance can update data.")
 
         try:
@@ -110,13 +121,13 @@ class CJoystick:
                 serialized_data = self._serialize_data(data_with_timestamp)
 
                 if len(serialized_data) > self.buffer_size:
-                    Logger.logToFile(LogSeverity.ERROR, "Data exceeds shared memory buffer size.", "CJoystick")
+                    self._log.err("Data exceeds shared memory buffer size.")
                     raise ValueError("Data exceeds shared memory buffer size.")
 
                 self.shared_memory.buf[:len(serialized_data)] = serialized_data
                 self.shared_memory.buf[len(serialized_data):] = b"\x00" * (self.buffer_size - len(serialized_data))
         except Exception as e:
-            Logger.logToFile(LogSeverity.ERROR, f"Shared memory update failed: {e}", "CJoystick")
+            self._log.err(f"Shared memory update failed: {e}")
             self.is_writer = False  # Fallback to prevent invalid writes
 
 
@@ -137,12 +148,12 @@ class CJoystick:
                     data_with_timestamp = self._deserialize_data(bytes(self.shared_memory.buf))
                     return data_with_timestamp
             except FileNotFoundError:
-                Logger.logToFile(LogSeverity.ERROR, "Shared memory not found. Retrying...", "CJoystick")
+                self._log.err("Shared memory not found. Retrying...")
                 print("Shared memory not found. Retrying...")
                 time.sleep(1)
                 retries -= 1
             except (pickle.UnpicklingError, EOFError, KeyError):
-                Logger.logToFile(LogSeverity.ERROR, "Failed to deserialize data.", "CJoystick")
+                self._log.err("Failed to deserialize data.")
                 return None
 
         print("Failed to connect to shared memory after retries.")
@@ -174,20 +185,20 @@ class CJoystick:
             try:
                 button_number = int(button_name[1:])  # Extract the number
             except ValueError:
-                Logger.logToFile(LogSeverity.FATAL, f"Invalid button number format: '{button_name}'", "CJoystick")
+                self._log.err(f"Invalid button number format: '{button_name}'")
                 raise ValueError(f"Invalid button number format: '{button_name}'")
         else:
             button_number = getattr(self, button_name, None)
 
         if button_number is None:
-            Logger.logToFile(LogSeverity.FATAL, f"Button name '{button_name}' is not defined.", "CJoystick")
+            self._log.err(f"Button name '{button_name}' is not defined.")
             raise ValueError(f"Button name '{button_name}' is not defined.")
 
         button_key = f"button{button_number}"
 
         # Ensure the button exists in received data
         if button_key not in data["buttons"]:
-            Logger.logToFile(LogSeverity.WARNING, f"Button key '{button_key}' not found in data.", "CJoystick")
+            self._log.warn(f"Button key '{button_key}' not found in data.")
             return 0
 
         current_state = data["buttons"].get(button_key, False)
@@ -258,20 +269,20 @@ class CJoystick:
             try:
                 button_number = int(button_name[1:])  # Extract the number
             except ValueError:
-                Logger.logToFile(LogSeverity.FATAL, f"Invalid button number format: '{button_name}'", "CJoystick")
+                self._log.err(f"Invalid button number format: '{button_name}'")
                 raise ValueError(f"Invalid button number format: '{button_name}'")
         else:
             button_number = getattr(self, button_name, None)
 
         if button_number is None:
-            Logger.logToFile(LogSeverity.FATAL, f"Button name '{button_name}' is not defined.", "CJoystick")
+            self._log.err(f"Button name '{button_name}' is not defined.")
             raise ValueError(f"Button name '{button_name}' is not defined.")
 
         button_key = f"button{button_number}"
 
         # Ensure the button exists in received data
         if button_key not in data["buttons"]:
-            Logger.logToFile(LogSeverity.WARNING, f"Button key '{button_key}' not found in data.", "CJoystick")
+            self._log.warn(f"Button key '{button_key}' not found in data.")
             return 0
 
         current_state = data["buttons"].get(button_key, False)
@@ -342,5 +353,8 @@ class CJoystick:
         Clean up shared memory (only the writer should unlink it).
         """
         if self.is_writer:
-            self.shared_memory.unlink()
+            try:
+                self.shared_memory.unlink()
+            except FileNotFoundError:
+                pass # Already cleaned up
         self.shared_memory.close()

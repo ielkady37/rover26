@@ -13,15 +13,15 @@ find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 
+# Generate messages
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EulerAngles.msg"
   "msg/EncoderRevolutions.msg"
   "msg/ActuatorCommand.msg"
   "msg/LogEntry.msg"
   "msg/HealthReport.msg"
-  "msg/ActuatorCommand.msg"
-  "msg/EulerAngles.msg"
   DEPENDENCIES builtin_interfaces std_msgs
+) # <-- Added the missing parenthesis here
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

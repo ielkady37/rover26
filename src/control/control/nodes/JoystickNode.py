@@ -5,18 +5,19 @@ from msgs.msg import Joystick
 from control.services.Joystick import CJoystick
 import signal
 from multiprocessing.shared_memory import SharedMemory
+from utils.Logger import RoverLogger
 
 class JoystickNode(Node):
     def __init__(self):
         super().__init__('joystick_node')
-        self.logger = self.get_logger()
+        self._log = RoverLogger()
         self.joystick = CJoystick(is_writer=True)
-        signal.signal(signal.SIGINT, self.handle_exit)
-        signal.signal(signal.SIGTERM, self.handle_exit)
+        # signal.signal(signal.SIGINT, self.handle_exit)
+        # signal.signal(signal.SIGTERM, self.handle_exit)
         self.subscriber = self.create_subscription(Joystick, '/joystick', self.callback, 10)
 
     def handle_exit(self, signum, frame):
-        self.logger.info(f"Received termination signal {signum}. Cleaning up shared memory.")
+        self._log.info(f"Received termination signal {signum}. Cleaning up shared memory.")
         self.joystick.cleanup()
         try:
             shm = SharedMemory(name="joystick_data")
@@ -42,6 +43,8 @@ def main(args=None):
     node = JoystickNode()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.joystick.cleanup()  # Explicit cleanup if needed
         node.destroy_node()
