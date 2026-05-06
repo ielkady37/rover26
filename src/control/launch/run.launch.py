@@ -16,4 +16,20 @@ def generate_launch_description():
     )
     return LaunchDescription([
         esp_bridge_node,
+    manual_navigation_node = Node(
+        package='control',
+        executable='manual_navigation_node',
+        output="screen",
+        name="manual_navigation_node",
+    ),
+    autonomous_navigation_node = Node(
+        package='control',
+        executable='autonomous_navigation_node',
+        output="screen",
+        name="autonomous_navigation_node",
+    ),
+
+    return LaunchDescription([
+        manual_navigation_node,
+        autonomous_navigation_node,
     ])

@@ -19,7 +19,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ActuatorCommand.msg"
   "msg/LogEntry.msg"
   "msg/HealthReport.msg"
-  "msg/MotorCommands.msg"
+  "msg/ActuatorCommand.msg"
+  "msg/EulerAngles.msg"
   DEPENDENCIES builtin_interfaces std_msgs
 
 if(BUILD_TESTING)
