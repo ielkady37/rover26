@@ -14,11 +14,13 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/EulerAngles.msg"
+  "msg/EncoderRevolutions.msg"
+  "msg/ActuatorCommand.msg"
   "msg/LogEntry.msg"
   "msg/HealthReport.msg"
   "msg/MotorCommands.msg"
   DEPENDENCIES builtin_interfaces std_msgs
-)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
