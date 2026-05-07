@@ -30,7 +30,7 @@ class AutonomousNavigationNode(LifecycleNode):
         try:
             # 1. Fetch parameters via Configurator
             conf = Configurator()
-            kin_data = conf.fetchData(Configurator.KINEMATICS)
+            kin_data = conf.fetchData(Configurator.LOCOMOTION)
             
             if not kin_data:
                 self._log.warn("kinematics.yaml not found or empty. Using defensive fallbacks.")

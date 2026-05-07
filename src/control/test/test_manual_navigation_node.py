@@ -20,9 +20,16 @@ def mocked_dependencies():
     with patch('control.nodes.ManualNavigationNode.Configurator') as mock_conf, \
          patch('control.nodes.ManualNavigationNode.CJoystick') as mock_joy:
          
-         # Setup Configurator with a non-zero deadzone to test boundary logic
+         # Setup Configurator
          conf_instance = MagicMock()
-         conf_instance.fetchData.return_value = {'yaw_KP': 1.0, 'yaw_KI': 0.1, 'yaw_KD': 0.05}
+         def mock_fetch(config_type):
+             if config_type == "pid_ks":
+                 return {'yaw_KP': 1.0, 'yaw_KI': 0.1, 'yaw_KD': 0.05}
+             elif config_type == "locomotion":
+                 return {'deadzone': 0.05, 'max_pwm': 255, 'control_loop_rate_hz': 100.0}
+             return {}
+             
+         conf_instance.fetchData.side_effect = mock_fetch
          mock_conf.return_value = conf_instance
          
          # Setup Joystick
@@ -36,12 +43,10 @@ class TestManualNavigationNode:
 
     def setup_method(self):
         self.node = ManualNavigationNode()
-        # Override deadzone parameter for testing before configuration
-        self.node.set_parameters([rclpy.parameter.Parameter('deadzone', rclpy.Parameter.Type.DOUBLE, 0.05)])
+        # WE REMOVED THE self.node.set_parameters(...) LINE HERE
         
     def teardown_method(self):
         self.node.destroy_node()
-
     # ==========================================
     # 🔴 1. LIFECYCLE & FAILURE PATHS
     # ==========================================

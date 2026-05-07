@@ -39,7 +39,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         joystick_node,
-        esp_bridge_node,
+        # esp_bridge_node,
         manual_navigation_node,
         autonomous_navigation_node
     ])

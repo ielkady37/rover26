@@ -4,3 +4,4 @@ max_angular_vel_radps: 1.0
 deadzone: 0.0
 watchdog_timeout_sec: 0.5
 max_pwm: 255
+control_loop_rate_hz: 100.0

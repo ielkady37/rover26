@@ -2,8 +2,8 @@
 import rclpy
 from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-
 import time
+
 from interfaces.msg import ActuatorCommand
 from interfaces.msg import EulerAngles
 from control.services.Navigation import Navigation
@@ -18,45 +18,55 @@ class ManualNavigationNode(LifecycleNode):
         super().__init__('manual_navigation_node')
         self._log = RoverLogger()
         
-        self.declare_parameter('control_loop_rate_hz', 100.0)
-        self.declare_parameter('max_pwm', 255)
-        self.declare_parameter('deadzone', 0.0)
-        
         self.control_timer = None
         self.latest_yaw = 0.0 
         self.last_time = time.time()
         self.joystick = None
+        self.deadzone = 0.0
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring ManualNavigationNode...")
         try:
-            loop_rate = self.get_parameter('control_loop_rate_hz').value
-            max_pwm = self.get_parameter('max_pwm').value
-            self.deadzone = self.get_parameter('deadzone').value
-
             conf = Configurator()
+            
+            locomotion_data = conf.fetchData(Configurator.LOCOMOTION)
+            if not locomotion_data:
+                self._log.warn("locomotion.yaml not found! Using defensive fallbacks.")
+                locomotion_data = {}
+
+            loop_rate = float(locomotion_data.get('control_loop_rate_hz', 100.0))
+            max_pwm = int(locomotion_data.get('max_pwm', 255))
+            self.deadzone = float(locomotion_data.get('deadzone', 0.0))
+
             pid_data = conf.fetchData(Configurator.PID_PARAMS)
+            if not pid_data:
+                pid_data = {}
+                
             kp = float(pid_data.get('yaw_KP', 0.0))
             ki = float(pid_data.get('yaw_KI', 0.0))
             kd = float(pid_data.get('yaw_KD', 0.0))
 
+            # Initialize Services
             self.pid = PIDController(kp=kp, ki=ki, kd=kd)
             self.navigation_service = Navigation(deadzone=self.deadzone, max_pwm=max_pwm)
             
             self.joystick = CJoystick(is_writer=False) 
 
+            # Setup Publishers & Subscribers
             motor_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.RELIABLE)
             self.motor_pub = self.create_publisher(ActuatorCommand, '/esp_tx', motor_qos)
 
             euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.euler_sub = self.create_subscription(EulerAngles, '/euler', self.euler_callback, euler_qos)
 
+            # Setup Timer
             timer_period = 1.0 / loop_rate
             self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
             self.control_timer.cancel() 
 
-            self._log.succ("ManualNavigationNode configured successfully.")
+            self._log.succ("ManualNavigationNode configured successfully from YAML.")
             return TransitionCallbackReturn.SUCCESS
+            
         except Exception as e:
             self._log.err(f"Configuration failed: {e}")
             return TransitionCallbackReturn.FAILURE
