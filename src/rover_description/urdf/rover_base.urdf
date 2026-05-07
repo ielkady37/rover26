@@ -4,6 +4,7 @@
      For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot name="rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:property name="base_to_ground_z" value="0.275" />
+  <xacro:property name="camera_baseline_half" value="0.08" />
 
   <link name="base_footprint" />
 
@@ -241,7 +242,7 @@
   </link>
 
   <joint name="RCam_joint" type="fixed">
-    <origin xyz="-0.025966 -0.078591 0.2496" rpy="0 0 0" />
+    <origin xyz="-0.025966 -${camera_baseline_half} 0.275" rpy="0 0 -0.3491" />
     <parent link="base_link" />
     <child link="RCam_link" />
     <axis xyz="0 0 0" />
@@ -271,7 +272,7 @@
   </link>
 
   <joint name="LCam_joint" type="fixed">
-    <origin xyz="-0.025966 0.078001 0.2496" rpy="0 0 0" />
+    <origin xyz="-0.025966 ${camera_baseline_half} 0.275" rpy="0 0 0.3491" />
     <parent link="base_link" />
     <child link="LCam_link" />
     <axis xyz="0 0 0" />

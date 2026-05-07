@@ -131,11 +131,11 @@
                 <topic>right_camera/image</topic>
                 <update_rate>10</update_rate>
                 <camera>
-                    <horizontal_fov> 1.92 </horizontal_fov>
+                    <horizontal_fov>1.4330</horizontal_fov>
                     <image>
                         <format> R8G8B8 </format>
                         <width> 640 </width>
-                        <height> 480 </height>
+                        <height>361</height>
                     </image>
                     <clip>
                         <near> 0.05 </near>
@@ -155,11 +155,11 @@
                 <topic>left_camera/image</topic>
                 <update_rate>10</update_rate>
                 <camera>
-                    <horizontal_fov> 1.92 </horizontal_fov>
+                    <horizontal_fov>1.4330</horizontal_fov>
                     <image>
                         <format> R8G8B8 </format>
                         <width> 640 </width>
-                        <height> 480 </height>
+                        <height>361</height>
                     </image>
                     <clip>
                         <near> 0.05 </near>
