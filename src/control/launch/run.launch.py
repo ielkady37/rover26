@@ -1,5 +1,9 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
+import os
 
 def generate_launch_description():
 
@@ -37,9 +41,19 @@ def generate_launch_description():
         name="autonomous_navigation_node"
     )
 
+    # ROSBridge WebSocket Server
+    rosbridge_server_node = Node(
+        package='rosbridge_server',
+        executable='rosbridge_websocket',
+        output='screen',
+        name='rosbridge_websocket',
+        parameters=[{'port': 9090}]
+    )
+
     return LaunchDescription([
         joystick_node,
         esp_bridge_node,
         manual_navigation_node,
-        autonomous_navigation_node
+        autonomous_navigation_node,
+        rosbridge_server_node
     ])
