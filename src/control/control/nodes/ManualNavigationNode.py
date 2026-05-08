@@ -113,8 +113,15 @@ class ManualNavigationNode(LifecycleNode):
             self.last_time = current_time
 
             axes = self.joystick.getAxis()
-            throttle = axes.get("left_y_axis", 0.0)
-            yaw = axes.get("right_x_axis", 0.0)
+            
+            r2 = axes.get("r2_axis", 0.0)  # Gas
+            l2 = axes.get("l2_axis", 0.0)  # Brake/Reverse
+            
+            # Final throttle: Positive -> forward, negative -> reverse
+            throttle = r2 - l2
+            
+            # L3 Steering (Left Stick X-Axis)
+            yaw = axes.get("left_x_axis", 0.0)
 
             active_yaw_effort = yaw
 
@@ -134,12 +141,12 @@ class ManualNavigationNode(LifecycleNode):
                 return
 
             msg = ActuatorCommand()
-            msg.m2_speed = float(cmd_dto.left_pwm)
-            msg.m2_dir = int(cmd_dto.left_dir)
-            msg.m2_brake = int(cmd_dto.left_brake)
             msg.m1_speed = float(cmd_dto.right_pwm)
             msg.m1_dir = int(cmd_dto.right_dir)
             msg.m1_brake = int(cmd_dto.right_brake)
+            msg.m2_speed = float(cmd_dto.left_pwm)
+            msg.m2_dir = int(cmd_dto.left_dir)
+            msg.m2_brake = int(cmd_dto.left_brake)
 
             self.motor_pub.publish(msg)
 

@@ -34,7 +34,7 @@ def mocked_dependencies():
          
          # Setup Joystick
          joy_instance = MagicMock()
-         joy_instance.getAxis.return_value = {"left_y_axis": 0.0, "right_x_axis": 0.0}
+         joy_instance.getAxis.return_value = {"r2_axis": 0.0, "l2_axis": 0.0, "left_x_axis": 0.0}
          mock_joy.return_value = joy_instance
          
          yield mock_conf, mock_joy
@@ -87,7 +87,7 @@ class TestManualNavigationNode:
         self.node.latest_yaw = 90.0
         
         self.node.pid.update_setpoint = MagicMock()
-        mock_joy.return_value.getAxis.return_value = {"left_y_axis": 0.0, "right_x_axis": 0.0}
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 0.0, "l2_axis": 0.0, "left_x_axis": 0.0}
         
         self.node.control_loop_callback()
         self.node.pid.update_setpoint.assert_called_with(90.0)
@@ -102,7 +102,7 @@ class TestManualNavigationNode:
         self.node.pid.stabilize = MagicMock()
         
         # Yaw of 0.5 is > deadzone of 0.05
-        mock_joy.return_value.getAxis.return_value = {"left_y_axis": 0.0, "right_x_axis": 0.5}
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 0.0, "l2_axis": 0.0, "left_x_axis": 0.5}
         
         self.node.control_loop_callback()
         self.node.pid.update_setpoint.assert_called_with(45.0)
@@ -115,7 +115,7 @@ class TestManualNavigationNode:
         self.node.latest_yaw = 10.0
         
         self.node.pid.stabilize = MagicMock(return_value=0.2) # Simulate PID correcting a drift
-        mock_joy.return_value.getAxis.return_value = {"left_y_axis": 1.0, "right_x_axis": 0.0}
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 1.0, "l2_axis": 0.0, "left_x_axis": 0.0}
         
         # Manually manipulate time to ensure dt > 0
         self.node.last_time = time.time() - 0.1 
@@ -135,7 +135,7 @@ class TestManualNavigationNode:
         self.node.motor_pub.publish = MagicMock()
         
         # Right turn (positive yaw)
-        mock_joy.return_value.getAxis.return_value = {"left_y_axis": 0.0, "right_x_axis": 1.0}
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 0.0, "l2_axis": 0.0, "left_x_axis": 1.0}
         self.node.control_loop_callback()
         
         msg = self.node.motor_pub.publish.call_args[0][0]
