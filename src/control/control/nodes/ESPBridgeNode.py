@@ -176,12 +176,12 @@ class ESPBridgeNode(Node):
 
     def _esp_tx_cb(self, msg: ActuatorCommandMsg) -> None:
         cmd = ActuatorCommand(
-            rightMotor=MotorCommand(
+            motor1=MotorCommand(
                 dir=int(msg.m1_dir),
                 brake=int(msg.m1_brake),
                 speed=float(msg.m1_speed),
             ),
-            leftMotor=MotorCommand(
+            motor2=MotorCommand(
                 dir=int(msg.m2_dir),
                 brake=int(msg.m2_brake),
                 speed=float(msg.m2_speed),

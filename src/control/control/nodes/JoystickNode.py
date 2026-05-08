@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from msgs.msg import Joystick
+from interfaces.msg import Joystick
 from control.services.Joystick import CJoystick
 import signal
 from multiprocessing.shared_memory import SharedMemory
@@ -14,7 +14,7 @@ class JoystickNode(Node):
         self.joystick = CJoystick(is_writer=True)
         # signal.signal(signal.SIGINT, self.handle_exit)
         # signal.signal(signal.SIGTERM, self.handle_exit)
-        self.subscriber = self.create_subscription(Joystick, '/joystick', self.callback, 10)
+        self.subscriber = self.create_subscription(Joystick, '/Joy', self.callback, 10)
 
     def handle_exit(self, signum, frame):
         self._log.info(f"Received termination signal {signum}. Cleaning up shared memory.")
