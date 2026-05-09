@@ -21,7 +21,8 @@ all: install build
 install:
 	@echo ">>> [1/4] Installing system packages..."
 	sudo apt-get update -qq
-	sudo apt-get install -y redis-server python3-pip python3-colcon-common-extensions
+	sudo apt-get install -y redis-server python3-pip python3-colcon-common-extensions \
+	                        ros-$(ROS_DISTRO)-ros-gz
 
 	@echo ">>> [2/4] Installing Python dependencies..."
 	pip install -r requirements.txt
@@ -40,7 +41,8 @@ install:
 		touch log/$$d/COLCON_IGNORE; \
 		touch log/$$d/.gitkeep; \
 	done
-	chown -R $(USER):$(USER) log/
+	@_REAL_USER=$${SUDO_USER:-$(USER)}; \
+	chown -R $$_REAL_USER:$$_REAL_USER log/; \
 	chmod -R u+rwX log/
 
 	@echo ">>> install done."

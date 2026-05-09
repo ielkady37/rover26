@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<robot name="rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <xacro:arg name="use_lidar_sim" default="true"/>
+    <xacro:arg name="use_imu_sim" default="true"/>
+    <xacro:arg name="use_gps_sim" default="true"/>
+    <xacro:arg name="use_camera_sim" default="true"/>
+    <xacro:include filename="rover_base.urdf" />
+    <xacro:include filename="rover_gazebo.urdf" />
+
+</robot>
