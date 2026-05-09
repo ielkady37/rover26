@@ -1,0 +1,2 @@
+bool is_found
+float32 confidence_score

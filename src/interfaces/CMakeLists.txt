@@ -21,6 +21,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/LogEntry.msg"
   "msg/HealthReport.msg"
   "msg/Joystick.msg"
+  "msg/TargetStatus.msg"
   DEPENDENCIES builtin_interfaces std_msgs
 ) # <-- Added the missing parenthesis here
 
