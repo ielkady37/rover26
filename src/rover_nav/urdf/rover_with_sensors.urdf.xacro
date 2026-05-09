@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<!--
+  rover_with_sensors.urdf.xacro
+  Extends the base rover.urdf with a 2D LiDAR (laser_link) and IMU link.
+  Rover dimensions (from SolidWorks export):
+    Wheelbase  : 0.560 m  (±0.280 m front/rear from base_link origin)
+    Wheel track: 0.370 m  (±0.185 m left/right for corner wheels)
+    Ground clearance: 0.275 m (base_footprint_joint z)
+-->
+<robot name="rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Include the base rover description -->
+  <xacro:include filename="$(find rover_description)/urdf/rover.urdf"/>
+
+  <!-- ─────────────────────── LiDAR ─────────────────────── -->
+  <!--
+    Mounted on top of base_link, slightly forward and centred.
+    Adjust xyz / rpy to match the physical mounting position.
+  -->
+  <link name="laser_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.15"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0"
+               iyy="0.0001" iyz="0"
+               izz="0.0001"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.06"/>
+      </geometry>
+      <material name="black">
+        <color rgba="0.1 0.1 0.1 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.06"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <!-- x=0.05 forward, centred (y=0), z=0.30 above base_link -->
+    <origin xyz="0.05 0.0 0.30" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <!-- ─────────────────────── IMU ─────────────────────── -->
+  <link name="imu_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.01"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0"
+               iyy="1e-6" iyz="0"
+               izz="1e-6"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <!-- Near centre of base_link, on top of the chassis -->
+    <origin xyz="0.0 0.0 0.05" rpy="0 0 0"/>
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+  </joint>
+
+</robot>
