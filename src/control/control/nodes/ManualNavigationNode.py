@@ -23,6 +23,9 @@ class ManualNavigationNode(LifecycleNode):
         self.last_time = time.time()
         self.joystick = None
         self.deadzone = 0.0
+        
+        # Debug Counter to prevent terminal flooding
+        self.debug_counter = 0
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring ManualNavigationNode...")
@@ -143,6 +146,19 @@ class ManualNavigationNode(LifecycleNode):
 
             if cmd_dto is None:
                 return
+            
+            # ------------------------------------------
+            # Throttled Data Flow Logging
+            # self.debug_counter += 1
+            # if self.debug_counter >= 20:  # Triggers 5 times a second (assuming 100Hz loop)
+            #     # Only print if we are actually commanding movement to keep idle logs clean
+            #     if abs(throttle) > 0.01 or abs(yaw) > 0.01:
+            #         print(f"\n--- DATA FLOW ---")
+            #         print(f"INPUTS   -> Target Throttle: {throttle:+.2f} | Target Yaw: {active_yaw_effort:+.2f}")
+            #         print(f"OUT LEFT -> PWM: {cmd_dto.left_pwm:3.0f} | Dir: {cmd_dto.left_dir} | Brake: {cmd_dto.left_brake}")
+            #         print(f"OUT RGHT -> PWM: {cmd_dto.right_pwm:3.0f} | Dir: {cmd_dto.right_dir} | Brake: {cmd_dto.right_brake}")
+            #     self.debug_counter = 0
+            # ------------------------------------------
 
             msg = ActuatorCommand()
             msg.m1_speed = float(cmd_dto.right_pwm)

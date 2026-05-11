@@ -10,8 +10,8 @@ from utils.Logger import RoverLogger
 class Navigation:
     """
     Unified Facade service for locomotion.
-    Takes normalized target efforts, applies hardware-level exponential smoothing, 
-    and maps them to hardware-ready MotorCommandDTOs.
+    Takes normalized target efforts, applies hardware-level exponential smoothing 
+    to the WHEELS, and maps them to hardware-ready MotorCommandDTOs.
     """
 
     def __init__(self, deadzone: float = 0.0, max_pwm: int = 255, alpha: float = 0.05, tolerance: float = 0.01):
@@ -20,38 +20,35 @@ class Navigation:
         self.pwm_mapper = PWMMapper(max_pwm=max_pwm)
         self.smoother = ExponentialSmoothing(alpha=alpha)
         
-        # Facade maintains physical momentum state
-        self._current_linear = 0.0
-        self._current_angular = 0.0
+        # Facade maintains physical momentum state of the WHEELS, not the joystick
+        self._current_left = 0.0
+        self._current_right = 0.0
         self.tolerance = tolerance
         
         self._log.info(f"Navigation facade active (deadzone={deadzone}, max_pwm={max_pwm}, alpha={alpha})")
 
     def calculate_motor_commands(self, target_linear: float, target_angular: float) -> Optional[MotorCommandDTO]:
-        """Used by Manual Navigation (Joystick + PID) which requires mixing."""
+        """Used by Manual Navigation. Mixes joystick inputs, THEN smooths."""
         try:
-            # 1. Apply Hardware-Level Smoothing (Protect the ESCs)
-            self._current_linear = self.smoother.smooth(self._current_linear, target_linear, self.tolerance)
-            self._current_angular = self.smoother.smooth(self._current_angular, target_angular, self.tolerance)
-
-            # 2. Kinematics (Tank Drive Mixing) using SMOOTHED values
-            left_speed, right_speed = Steering.calculate_tank_drive(throttle=self._current_linear, yaw=self._current_angular)
+            # 1. Kinematics (Tank Drive Mixing) using RAW abstract inputs
+            target_left, target_right = Steering.calculate_tank_drive(throttle=target_linear, yaw=target_angular)
             
-            return self.calculate_from_wheel_speeds(left_speed, right_speed)
+            # 2. Pass to wheel speed calculator for smoothing and mapping
+            return self.calculate_from_wheel_speeds(target_left, target_right)
         except (ValueError, TypeError) as e:
             self._log.warn(f"Navigation facade mathematical fault during mixing: {e}")
             return None
 
     def calculate_from_wheel_speeds(self, target_left: float, target_right: float) -> Optional[MotorCommandDTO]:
-        """Used by Autonomous Navigation (Kinematics) which provides exact wheel speeds."""
+        """Used by Autonomous Navigation. Smooths physical wheel targets."""
         try:
             # 1. Apply Hardware-Level Smoothing (Protect the ESCs)
-            self._current_linear = self.smoother.smooth(self._current_linear, target_left, self.tolerance)
-            self._current_angular = self.smoother.smooth(self._current_angular, target_right, self.tolerance)
+            self._current_left = self.smoother.smooth(self._current_left, target_left, self.tolerance)
+            self._current_right = self.smoother.smooth(self._current_right, target_right, self.tolerance)
 
-            # 2. Evaluate Direction and Brake using SMOOTHED values
-            l_dir, l_brake, l_mag = self.dir_evaluator.evaluate(self._current_linear)
-            r_dir, r_brake, r_mag = self.dir_evaluator.evaluate(self._current_angular)
+            # 2. Evaluate Direction and Brake using SMOOTHED physical values
+            l_dir, l_brake, l_mag = self.dir_evaluator.evaluate(self._current_left)
+            r_dir, r_brake, r_mag = self.dir_evaluator.evaluate(self._current_right)
 
             # 3. Map to Hardware PWM
             l_pwm = self.pwm_mapper.map_magnitude(l_mag)
@@ -67,5 +64,5 @@ class Navigation:
             
     def reset_momentum(self):
         """Emergency stop helper to clear residual momentum."""
-        self._current_linear = 0.0
-        self._current_angular = 0.0
+        self._current_left = 0.0
+        self._current_right = 0.0
