@@ -37,6 +37,14 @@ def generate_launch_description():
         name="autonomous_navigation_node"
     )
 
+    mission_manager_node = Node(
+        package='control',
+        executable='mission_manager_node',
+        output="screen",
+        emulate_tty=True,
+        name="mission_manager_node"
+    )
+
     # ROSBridge WebSocket Server
     rosbridge_server_node = Node(
         package='rosbridge_server',
@@ -51,5 +59,6 @@ def generate_launch_description():
         manual_navigation_node,
         autonomous_navigation_node,
         # esp_bridge_node,
+        mission_manager_node,
         rosbridge_server_node
     ])

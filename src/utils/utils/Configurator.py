@@ -7,6 +7,7 @@ class Configurator():
     PINS = "hardware_pins"
     PID_PARAMS = "pid_ks"
     LOCOMOTION = "locomotion"
+    MISSION = "mission"
     
     def __init__(self):
         self.__configFile = ''
@@ -39,6 +40,8 @@ class Configurator():
             config_filename = Configurator.PID_PARAMS
         elif data_type == Configurator.LOCOMOTION:
             config_filename = Configurator.LOCOMOTION
+        elif data_type == Configurator.MISSION:
+            config_filename = Configurator.MISSION
         else:
             self.__raiseTypeError(data_type)
         
