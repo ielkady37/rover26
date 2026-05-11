@@ -340,6 +340,18 @@ class CJoystick:
         if data is None or "axes" not in data:
             return {"left_x_axis": 0.0, "left_y_axis": 0.0, "right_x_axis": 0.0, "right_y_axis": 0.0}  # Default values if no data available
         return data["axes"]
+    
+    def getButtons(self):
+        """
+        Returns a dictionary of raw joystick button states.
+        
+        Returns:
+            dictionary: { "button_r2": True, "button_x": False, ... }
+        """
+        data = self.__getData()
+        if data is None or "buttons" not in data:
+            return {}  
+        return data["buttons"]
 
     def _signal_cleanup(self, signum, frame):
         """

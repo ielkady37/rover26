@@ -39,9 +39,13 @@ class AutonomousNavigationNode(LifecycleNode):
             track_width = float(kin_data.get('track_width_meters', 0.3))
             max_linear_vel = float(kin_data.get('max_linear_vel_mps', 0.3))
             max_angular_vel = float(kin_data.get('max_angular_vel_radps', 1.0))
+
             deadzone = float(kin_data.get('deadzone', 0.0))
             self.watchdog_timeout = float(kin_data.get('watchdog_timeout_sec', 0.5))
             max_pwm = int(kin_data.get('max_pwm', 255))
+
+            alpha = float(kin_data.get('smoothing_alpha', 0.05))
+            tolerance = float(kin_data.get('smoothing_tolerance', 0.01))
 
             # 2. Initialize Services
             self.kinematics = Kinematics(
@@ -49,7 +53,9 @@ class AutonomousNavigationNode(LifecycleNode):
                 max_linear_vel=max_linear_vel, 
                 max_angular_vel=max_angular_vel
             )
-            self.navigation_service = Navigation(deadzone=deadzone, max_pwm=max_pwm)
+            self.navigation_service = Navigation(
+                deadzone=deadzone, max_pwm=max_pwm, alpha=alpha, tolerance=tolerance
+            )
 
             # 3. Setup Publishers and Subscribers
             motor_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -104,19 +110,22 @@ class AutonomousNavigationNode(LifecycleNode):
             angular_z = msg.angular.z
 
             left_norm, right_norm = self.kinematics.calculate_wheel_speeds(linear_x, angular_z)
-            cmd_dto = self.navigation_service.calculate_from_wheel_speeds(left_norm, right_norm)
+            cmd_dto = self.navigation_service.calculate_from_wheel_speeds(
+                target_left=left_norm,
+                target_right=right_norm
+            )
 
             if cmd_dto is None:
                 self._log.err("cmd_dto is None. Skipping publish.")
                 return
 
             act_msg = ActuatorCommand()
-            act_msg.m2_speed = cmd_dto.left_pwm
-            act_msg.m2_dir = cmd_dto.left_dir
-            act_msg.m2_brake = cmd_dto.left_brake
-            act_msg.m1_speed = cmd_dto.right_pwm
-            act_msg.m1_dir = cmd_dto.right_dir
-            act_msg.m1_brake = cmd_dto.right_brake
+            act_msg.m1_speed = float(cmd_dto.right_pwm)
+            act_msg.m1_dir = int(cmd_dto.right_dir)
+            act_msg.m1_brake = int(cmd_dto.right_brake)
+            act_msg.m2_speed = float(cmd_dto.left_pwm)
+            act_msg.m2_dir = int(cmd_dto.left_dir)
+            act_msg.m2_brake = int(cmd_dto.left_brake)
 
             self.motor_pub.publish(act_msg)
 
@@ -138,6 +147,10 @@ class AutonomousNavigationNode(LifecycleNode):
             msg.m1_brake = 1
             msg.m2_brake = 1
             self.motor_pub.publish(msg)
+
+            if hasattr(self, 'navigation_service'):
+                self.navigation_service.reset_momentum()
+
         except Exception as e:
             self._log.err(f"Failed to publish safe stop: {e}")
 

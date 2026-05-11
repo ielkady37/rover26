@@ -38,6 +38,13 @@ class ManualNavigationNode(LifecycleNode):
             max_pwm = int(locomotion_data.get('max_pwm', 255))
             self.deadzone = float(locomotion_data.get('deadzone', 0.0))
 
+            self.fwd_axis = locomotion_data.get('throttle_forward_axis', 'r2_axis')
+            self.rev_axis = locomotion_data.get('throttle_reverse_axis', 'l2_axis')
+            self.steer_axis = locomotion_data.get('steering_axis', 'left_x_axis')
+
+            alpha = float(locomotion_data.get('smoothing_alpha', 0.05))
+            tolerance = float(locomotion_data.get('smoothing_tolerance', 0.01))
+
             pid_data = conf.fetchData(Configurator.PID_PARAMS)
             if not pid_data:
                 pid_data = {}
@@ -48,8 +55,9 @@ class ManualNavigationNode(LifecycleNode):
 
             # Initialize Services
             self.pid = PIDController(kp=kp, ki=ki, kd=kd)
-            self.navigation_service = Navigation(deadzone=self.deadzone, max_pwm=max_pwm)
-            
+            self.navigation_service = Navigation(
+                deadzone=self.deadzone, max_pwm=max_pwm, alpha=alpha, tolerance=tolerance
+            )
             self.joystick = CJoystick(is_writer=False) 
 
             # Setup Publishers & Subscribers
@@ -114,14 +122,10 @@ class ManualNavigationNode(LifecycleNode):
 
             axes = self.joystick.getAxis()
             
-            r2 = axes.get("r2_axis", 0.0)  # Gas
-            l2 = axes.get("l2_axis", 0.0)  # Brake/Reverse
-            
-            # Final throttle: Positive -> forward, negative -> reverse
-            throttle = r2 - l2
-            
-            # L3 Steering (Left Stick X-Axis)
-            yaw = axes.get("left_x_axis", 0.0)
+            fwd_val = axes.get(self.fwd_axis, 0.0) 
+            rev_val = axes.get(self.rev_axis, 0.0)
+            throttle = fwd_val - rev_val
+            yaw = axes.get(self.steer_axis, 0.0)
 
             active_yaw_effort = yaw
 
@@ -133,8 +137,8 @@ class ManualNavigationNode(LifecycleNode):
                 self.pid.update_setpoint(self.latest_yaw)
 
             cmd_dto = self.navigation_service.calculate_motor_commands(
-                linear_effort=throttle, 
-                angular_effort=active_yaw_effort
+                target_linear=throttle,
+                target_angular=active_yaw_effort
             )
 
             if cmd_dto is None:
@@ -162,6 +166,9 @@ class ManualNavigationNode(LifecycleNode):
             msg.m1_speed = 0.0
             msg.m2_speed = 0.0
             self.motor_pub.publish(msg)
+
+            if hasattr(self, 'navigation_service'):
+                self.navigation_service.reset_momentum()
         except Exception as e:
             self._log.err(f"Failed to publish safe stop: {e}")
 

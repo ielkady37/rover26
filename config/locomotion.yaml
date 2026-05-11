@@ -5,3 +5,8 @@ deadzone: 0.0
 watchdog_timeout_sec: 0.5
 max_pwm: 255
 control_loop_rate_hz: 100.0
+throttle_forward_axis: "r2_axis"
+throttle_reverse_axis: "l2_axis"
+steering_axis: "left_x_axis"
+smoothing_alpha: 0.05
+smoothing_tolerance: 0.01

@@ -51,5 +51,5 @@ def generate_launch_description():
         manual_navigation_node,
         autonomous_navigation_node,
         # esp_bridge_node,
-        # rosbridge_server_node
+        rosbridge_server_node
     ])

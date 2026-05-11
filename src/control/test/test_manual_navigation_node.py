@@ -23,11 +23,21 @@ def mocked_dependencies():
          # Setup Configurator
          conf_instance = MagicMock()
          def mock_fetch(config_type):
-             if config_type == "pid_ks":
+             name = str(config_type).lower()
+             if "pid" in name or config_type == "pid_ks":
                  return {'yaw_KP': 1.0, 'yaw_KI': 0.1, 'yaw_KD': 0.05}
-             elif config_type == "locomotion":
-                 return {'deadzone': 0.05, 'max_pwm': 255, 'control_loop_rate_hz': 100.0}
-             return {}
+             
+             # Default catch-all returns locomotion config
+             return {
+                 'deadzone': 0.05, 
+                 'max_pwm': 255, 
+                 'control_loop_rate_hz': 100.0,
+                 'throttle_forward_axis': 'r2_axis',
+                 'throttle_reverse_axis': 'l2_axis',
+                 'steering_axis': 'left_x_axis',
+                 'smoothing_alpha': 1.0,  # <-- 1.0 Bypasses smoothing delay for instant testing
+                 'smoothing_tolerance': 0.01
+             }
              
          conf_instance.fetchData.side_effect = mock_fetch
          mock_conf.return_value = conf_instance
@@ -175,17 +185,22 @@ class TestManualNavigationNode:
         self.node.publish_safe_stop.assert_called_once()
 
     def test_publish_safe_stop_details(self, ros_init, mocked_dependencies):
-        """[Gap 9] Verifies safe stop explicitly zeroes speed and sets brake flags."""
+        """[Gap 9] Verifies safe stop explicitly zeroes speed, sets brakes, and resets momentum."""
         self.node.on_configure(None)
         self.node.motor_pub.publish = MagicMock()
+        self.node.navigation_service.reset_momentum = MagicMock()
         
         self.node.publish_safe_stop()
         
+        # Verify ROS message
         msg = self.node.motor_pub.publish.call_args[0][0]
         assert msg.m1_brake == 1
         assert msg.m2_brake == 1
         assert msg.m1_speed == 0.0
         assert msg.m2_speed == 0.0
+        
+        # Verify Facade momentum was cleared
+        self.node.navigation_service.reset_momentum.assert_called_once()
 
     # ==========================================
     # 🟡 4. SENSOR ANOMALIES
