@@ -29,5 +29,8 @@ smbus2>=0.4.0
 # SPI communication (e.g. sensors over SPI on Raspberry Pi)
 spidev>=3.5
 
+# UART / serial communication (e.g. ESP32 over /dev/ttyUSB*)
+pyserial>=3.5
+
 # --- Development / Test -------------------------------------------------------
 pytest>=7.0.0

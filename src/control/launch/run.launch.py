@@ -58,7 +58,7 @@ def generate_launch_description():
         joystick_node,
         manual_navigation_node,
         autonomous_navigation_node,
-        # esp_bridge_node,
+        esp_bridge_node,
         mission_manager_node,
         rosbridge_server_node
     ])

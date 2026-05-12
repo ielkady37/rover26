@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-ESPBridgeNode — ROS2 node that owns both ESP32 links.
+ESPBridgeNode — ROS2 node that owns both ESP32 UART links.
 
-  • SPI  → sensor  ESP32  (read)   publishes /imu /odom /euler /encoders
-  • I2C  → actuator ESP32 (write)  subscribes /esp_tx
+    • UART(sensor)   → sensor ESP32   (read)   publishes /imu /odom /euler /encoders
+    • UART(actuator) → actuator ESP32 (write)  subscribes /esp_tx
 
 On startup
 ──────────
-  1. Opens SPI, reads one-time ContractPacket from sensor ESP32.
-  2. Opens I2C, sends one-time ContractPacket to actuator ESP32.
+    1. Opens sensor UART, reads one-time ContractPacket from sensor ESP32.
+    2. Opens actuator UART, sends one-time ContractPacket to actuator ESP32.
 
 Every timer tick
 ─────────────────
@@ -16,24 +16,23 @@ Every timer tick
 
 On every /esp_tx message
 ─────────────────────────
-  4. Sends one ActuatorPacket to the actuator ESP32 via I2C.
+    4. Sends one ActuatorPacket to the actuator ESP32 via UART.
 
 ROS2 parameters
 ───────────────
-  --- SPI / sensor ---
-  bus           (int,   0)       SPI bus
-  device        (int,   0)       SPI chip-select
-  max_speed_hz  (int,   1000000) SPI clock
-  spi_mode      (int,   0)       SPI mode 0-3
+    --- UART / sensor ---
+    sensor_port      (str,   '/dev/ttyUSB0')  sensor ESP32 UART device
+    sensor_baudrate  (int,   115200)          UART baud rate
+    uart_timeout     (float, 0.2)             UART read/write timeout seconds
   wheel_radius  (float, 0.05)    metres
   wheel_base    (float, 0.30)    metres
   publish_rate  (float, 100.0)   Hz
   imu_frame     (str,   'imu_link')
   odom_frame    (str,   'odom')
   base_frame    (str,   'base_link')
-  --- I2C / actuator ---
-  i2c_bus       (int,   1)       I2C bus  (/dev/i2c-1)
-  i2c_address   (int,   0x10)    actuator ESP32 7-bit address
+    --- UART / actuator ---
+    actuator_port     (str, '/dev/ttyUSB1')  actuator ESP32 UART device
+    actuator_baudrate (int, 115200)          UART baud rate
 """
 import math
 import threading
@@ -48,8 +47,7 @@ from tf2_ros import TransformBroadcaster
 from interfaces.msg import EulerAngles, EncoderRevolutions, ActuatorCommand as ActuatorCommandMsg
 
 from control.services.ESPDataController import ESPDataController
-from control.services.SPIService import SPIService
-from control.services.I2CService import I2CService
+from control.services.UARTService import UARTService
 from control.DTOs.SensorData import SensorData
 from control.DTOs.ActuatorCommand import ActuatorCommand, MotorCommand
 from control.exceptions.SensorInitializationError import SensorInitializationError
@@ -64,18 +62,17 @@ class ESPBridgeNode(Node):
         super().__init__("esp_bridge_node")
 
         # declare parameters 
-        self.declare_parameter("bus",          0)
-        self.declare_parameter("device",       0)
-        self.declare_parameter("max_speed_hz", 1_000_000)
-        self.declare_parameter("spi_mode",     0)
+        self.declare_parameter("sensor_port",      "/dev/ttyUSB0")
+        self.declare_parameter("sensor_baudrate",  115200)
+        self.declare_parameter("actuator_port",    "/dev/ttyUSB1")
+        self.declare_parameter("actuator_baudrate", 115200)
+        self.declare_parameter("uart_timeout",     0.2)
         self.declare_parameter("wheel_radius", 0.05)
         self.declare_parameter("wheel_base",   0.30)
         self.declare_parameter("publish_rate", 100.0)
         self.declare_parameter("imu_frame",    "imu_link")
         self.declare_parameter("odom_frame",   "odom")
         self.declare_parameter("base_frame",   "base_link")
-        self.declare_parameter("i2c_bus",      1)
-        self.declare_parameter("i2c_address",  0x10)
 
         # publishers
         self._imu_pub     = self.create_publisher(Imu,                "/imu",      10)
@@ -91,62 +88,64 @@ class ESPBridgeNode(Node):
         self._prev_enc1: float | None = None
         self._prev_enc2: float | None = None
 
-        # initialise SPI + I2C / contracts
-        spi_comm = {
-            "bus":          self.get_parameter("bus").value,
-            "device":       self.get_parameter("device").value,
-            "max_speed_hz": self.get_parameter("max_speed_hz").value,
-            "mode":         self.get_parameter("spi_mode").value,
+        # initialise UART sensor + actuator links / contracts
+        uart_sensor_comm = {
+            "port": self.get_parameter("sensor_port").value,
+            "baudrate": self.get_parameter("sensor_baudrate").value,
+            "timeout": self.get_parameter("uart_timeout").value,
+            "data_contract": 0xAB,
         }
-        i2c_comm = {
-            "bus":     self.get_parameter("i2c_bus").value,
-            "address": self.get_parameter("i2c_address").value,
+        uart_actuator_comm = {
+            "port": self.get_parameter("actuator_port").value,
+            "baudrate": self.get_parameter("actuator_baudrate").value,
+            "timeout": self.get_parameter("uart_timeout").value,
+            "data_contract": 0xBC,
         }
-        self._spi_ctrl = ESPDataController(SPIService(spi_comm))
-        self._i2c_ctrl = ESPDataController(I2CService(i2c_comm))
+        self._sensor_ctrl = ESPDataController(UARTService(uart_sensor_comm))
+        self._actuator_ctrl = ESPDataController(UARTService(uart_actuator_comm))
         try:
-            self._spi_ctrl.initialize_with_retry(
+            self._sensor_ctrl.initialize_with_retry(
                 on_retry=lambda attempt, total, exc: self.get_logger().warn(
-                    f"SPI init attempt {attempt}/{total} failed: {exc} — retrying..."
+                    f"UART sensor init attempt {attempt}/{total} failed: {exc} — retrying..."
                 ),
                 on_success=lambda attempt, total: self.get_logger().info(
-                    f"SPI initialized on attempt {attempt}/{total}"
+                    f"UART sensor initialized on attempt {attempt}/{total}"
                 ),
             )
-            self._spi_ctrl.read_contract()
-            self._i2c_ctrl.initialize_with_retry(
+            self._sensor_ctrl.read_contract()
+            self._actuator_ctrl.initialize_with_retry(
                 on_retry=lambda attempt, total, exc: self.get_logger().warn(
-                    f"I2C init attempt {attempt}/{total} failed: {exc} — retrying..."
+                    f"UART actuator init attempt {attempt}/{total} failed: {exc} — retrying..."
                 ),
                 on_success=lambda attempt, total: self.get_logger().info(
-                    f"I2C initialized on attempt {attempt}/{total}"
+                    f"UART actuator initialized on attempt {attempt}/{total}"
                 ),
             )
             try:
-                self._i2c_ctrl.send_contract(
+                self._actuator_ctrl.send_contract(
                     on_retry=lambda attempt, total, exc: self.get_logger().warn(
-                        f"I2C contract send attempt {attempt}/{total} failed: {exc} — retrying..."
+                        f"UART actuator contract send attempt {attempt}/{total} failed: {exc} — retrying..."
                     ),
                     on_success=lambda attempt, total: self.get_logger().info(
-                        f"I2C contract sent on attempt {attempt}/{total}"
+                        f"UART actuator contract sent on attempt {attempt}/{total}"
                     ),
                 )
-                self._i2c_ready = True
+                self._actuator_ready = True
                 self.get_logger().info(
                     f"ESP32 contracts exchanged — "
-                    f"SPI fields={self._spi_ctrl.fields}, "
-                    f"ticks_per_rev={self._spi_ctrl.ticks_per_rev}, "
-                    f"packet_size={self._spi_ctrl._packet_size} bytes | "
-                    f"I2C actuator 0x{i2c_comm['address']:02X} ready"
+                    f"sensor fields={self._sensor_ctrl.fields}, "
+                    f"ticks_per_rev={self._sensor_ctrl.ticks_per_rev}, "
+                    f"packet_size={self._sensor_ctrl._packet_size} bytes | "
+                    f"actuator UART {uart_actuator_comm['port']} ready"
                 )
             except SensorInitializationError as e:
-                self._i2c_ready = False
+                self._actuator_ready = False
                 self.get_logger().error(
-                    f"Actuator ESP32 unavailable — I2C contract failed: {e}. "
+                    f"Actuator ESP32 unavailable — UART contract failed: {e}. "
                     f"Node will run in sensor-only mode."
                 )
         except SensorInitializationError as e:
-            self.get_logger().fatal(f"Failed to initialise ESP32 links: {e}")
+            self.get_logger().fatal(f"Failed to initialise UART ESP32 links: {e}")
             raise
 
         # /esp_tx subscriber
@@ -161,13 +160,13 @@ class ESPBridgeNode(Node):
         self._latest_data: SensorData | None = None
         self._data_lock = threading.Lock()
 
-        # background thread: reads SPI as fast as possible (~250 Hz at 125 kHz)
-        # so the publish timer always gets data that is at most 1 SPI-transfer old
+        # background thread: reads sensor UART continuously
+        # so the publish timer always gets the latest complete packet
         self._running = True
         self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
         self._reader_thread.start()
 
-        # periodic publish timer (does NOT block on SPI)
+        # periodic publish timer (does NOT block on UART reads)
         rate = self.get_parameter("publish_rate").value
         self._timer = self.create_timer(1.0 / rate, self._timer_cb)
         self.get_logger().info(f"ESPBridgeNode running at {rate:.1f} Hz")
@@ -189,26 +188,26 @@ class ESPBridgeNode(Node):
             laser=int(msg.laser),
             servo=float(msg.servo),
         )
-        if not self._i2c_ready:
+        if not self._actuator_ready:
             self.get_logger().warn(
-                "Actuator write skipped — I2C not available.",
+                "Actuator write skipped — UART not available.",
                 throttle_duration_sec=5.0,
             )
             return
         try:
-            self._i2c_ctrl.write(cmd)
+            self._actuator_ctrl.write(cmd)
         except SensorReadError as e:
             self.get_logger().warn(
                 f"Actuator write failed: {e}",
                 throttle_duration_sec=5.0,
             )
 
-    # background SPI reader
+    # background UART reader
 
     def _reader_loop(self) -> None:
         while self._running:
             try:
-                data = self._spi_ctrl.receive()
+                data = self._sensor_ctrl.receive()
                 if data is not None:
                     with self._data_lock:
                         self._latest_data = data
@@ -338,8 +337,8 @@ class ESPBridgeNode(Node):
     def destroy_node(self) -> None:
         self._running = False
         self._reader_thread.join(timeout=1.0)
-        self._spi_ctrl.close()
-        self._i2c_ctrl.close()
+        self._sensor_ctrl.close()
+        self._actuator_ctrl.close()
         super().destroy_node()
 
 
