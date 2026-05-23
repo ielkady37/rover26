@@ -77,13 +77,13 @@ from control.exceptions.SensorReadError import SensorReadError
 CONTRACT_START_BYTE      = 0xAB
 CONTRACT_FIELD_NAME_LEN  = 12
 CONTRACT_FIELD_COUNT     = 15
-CONTRACT_PACKET_SIZE     = 203 
+CONTRACT_PACKET_SIZE     = 202 
 # Data-packet constants
 PACKET_START_BYTE = 0xAA
 PACKET_SIZE       = 62         
 
 # Struct formats (little-endian, packed)
-_CONTRACT_HEADER_FMT = "<BBHHB"                      # start, field_count, data_packet_size, ticks_per_rev, packet_start_byte
+_CONTRACT_HEADER_FMT = "<BBHH"                       # start, field_count, data_packet_size, ticks_per_rev
 _CONTRACT_FIELD_FMT  = f"<{CONTRACT_FIELD_NAME_LEN}sB"  # name[12], bit_width
 _DATA_PACKET_FMT     = "<B15fB"                      # start, 15 floats, checksum
 
@@ -259,12 +259,10 @@ class ESPDataController:
     def receive(self) -> SensorData | None:
         """Read one packet from the transport.
 
-        Returns SensorData for a normal data packet.
-        Returns None if a contract packet arrived mid-stream and was applied
-        via update_contract_struct() (rare after read_contract() is done).
-        Raises SensorReadError on checksum / framing errors — caller retries.
+        Passes the expected start byte to UARTService so the stream is
+        re-synchronised automatically after any framing error.
         """
-        raw = self._comm.receive(self._packet_size)
+        raw = self._comm.receive(self._packet_size, start_byte=self._packet_start_byte)
         if raw[0] == self._comm.data_contract:
             self.update_contract_struct(raw)
             return None
@@ -309,7 +307,7 @@ class ESPDataController:
     def update_contract_struct(self, raw: bytes) -> None:
         """Parse a validated ContractPacket and update internal packet state."""
         header_size = struct.calcsize(_CONTRACT_HEADER_FMT)
-        _, field_count, data_packet_size, ticks_per_rev, packet_start_byte = struct.unpack_from(
+        _, field_count, data_packet_size, ticks_per_rev = struct.unpack_from(
             _CONTRACT_HEADER_FMT, raw, 0
         )
 
@@ -323,7 +321,7 @@ class ESPDataController:
             offset += field_size
 
         self._packet_size        = data_packet_size
-        self._packet_start_byte  = packet_start_byte
+        self._packet_start_byte  = PACKET_START_BYTE  # always 0xAA — not in C header
         self._ticks_per_rev      = ticks_per_rev
         self._fields             = fields
 

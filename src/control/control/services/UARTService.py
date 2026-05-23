@@ -37,7 +37,12 @@ class UARTService:
                 baudrate=self._baudrate,
                 timeout=self._timeout,
                 write_timeout=self._write_timeout,
+                dsrdtr=False,        # prevent DTR toggle from resetting the ESP32 on port open
+                rtscts=False,        # prevent RTS toggle for the same reason
             )
+            # Give the ESP32 time to finish booting in case it was power-cycled
+            # or just programmed.  3 s covers the worst-case bootloader delay.
+            time.sleep(3.0)
             self._serial.reset_input_buffer()
             self._serial.reset_output_buffer()
         except Exception as e:
@@ -61,13 +66,41 @@ class UARTService:
         except Exception as e:
             raise SensorReadError(f"UART send failed on {self._port}: {e}")
 
-    def receive(self, length: int) -> bytes:
+    def receive(self, length: int, start_byte: int | None = None) -> bytes:
+        """Read exactly *length* bytes from the UART.
+
+        If *start_byte* is given, bytes are discarded until the first byte of
+        the read equals *start_byte*.  This re-synchronises the stream after
+        any framing error without requiring an ESP32 reset.
+        """
         if self._serial is None:
             raise SensorInitializationError("UART is not initialized. Call initialize() first.")
 
         try:
+            # ── optional start-byte scan ──────────────────────────────────────
+            if start_byte is not None:
+                sync_deadline = time.monotonic() + self._timeout
+                while True:
+                    b = self._serial.read(1)
+                    if not b:
+                        if time.monotonic() >= sync_deadline:
+                            raise SensorReadError(
+                                f"UART sync timeout on {self._port}: "
+                                f"start byte 0x{start_byte:02X} not found"
+                            )
+                        continue
+                    if b[0] == start_byte:
+                        # Found the start byte — read the remaining bytes below
+                        prefix = b
+                        break
+                remaining = length - 1
+            else:
+                prefix = b""
+                remaining = length
+
+            # ── read remaining bytes ──────────────────────────────────────────
             deadline = time.monotonic() + max(self._timeout, 0.01)
-            data = bytearray()
+            data = bytearray(prefix)
             while len(data) < length and time.monotonic() < deadline:
                 chunk = self._serial.read(length - len(data))
                 if chunk:
@@ -89,7 +122,21 @@ class UARTService:
         except Exception as e:
             raise SensorReadError(f"UART receive failed on {self._port}: {e}")
 
-    def close(self) -> None:
+    def read_ack(self, timeout: float = 0.1) -> int | None:
+        """Try to read one ACK byte with a short timeout. Returns the byte or None."""
+        if self._serial is None:
+            return None
+        old_timeout = self._serial.timeout
+        try:
+            self._serial.timeout = timeout
+            b = self._serial.read(1)
+            return b[0] if b else None
+        except Exception:
+            return None
+        finally:
+            self._serial.timeout = old_timeout
+
+
         if self._serial is not None:
             self._serial.close()
             self._serial = None
