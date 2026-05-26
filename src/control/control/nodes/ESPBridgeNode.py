@@ -62,9 +62,9 @@ class ESPBridgeNode(Node):
         super().__init__("esp_bridge_node")
 
         # declare parameters 
-        self.declare_parameter("sensor_port",      "/dev/ttyUSB0")
+        self.declare_parameter("sensor_port",      "/dev/ttyUSB1")
         self.declare_parameter("sensor_baudrate",  115200)
-        self.declare_parameter("actuator_port",    "/dev/ttyUSB1")
+        self.declare_parameter("actuator_port",    "/dev/ttyUSB0")
         self.declare_parameter("actuator_baudrate", 115200)
         self.declare_parameter("uart_timeout",     0.2)
         self.declare_parameter("wheel_radius", 0.05)
