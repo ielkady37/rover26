@@ -28,3 +28,5 @@ src/install/
 .env
 .env.local
 
+models/yolopv2.pt
+
