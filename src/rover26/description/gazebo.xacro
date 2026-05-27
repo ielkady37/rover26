@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Differential drive plugin -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>leftwheel_joint</left_joint>
+      <right_joint>rightwheel_joint</right_joint>
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <publish_odom>false</publish_odom>
+      <publish_odom_tf>false</publish_odom_tf>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <child_frame_id>base_footprint</child_frame_id>
+      <velocity_covariance_diagonal>0.01 0.01 0.01 0.01 0.01 0.01</velocity_covariance_diagonal>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+  <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+    <topic>joint_states</topic>
+  </plugin>
+</gazebo>
+
+  <!-- Wheel friction -->
+  <gazebo reference="rightwheel_link"><mu1>5.0</mu1><mu2>5.0</mu2></gazebo>
+  <gazebo reference="leftwheel_link"><mu1>5.0</mu1><mu2>5.0</mu2></gazebo>
+  <gazebo reference="FL_castor_link"><mu1>0.001</mu1><mu2>0.001</mu2></gazebo>
+  <gazebo reference="FL_wheel_link"><mu1>0.1</mu1><mu2>0.1</mu2></gazebo>
+  <gazebo reference="BL_castor_link"><mu1>0.001</mu1><mu2>0.001</mu2></gazebo>
+  <gazebo reference="BL_wheel_link"><mu1>0.1</mu1><mu2>0.1</mu2></gazebo>
+  <gazebo reference="FR_castor_link"><mu1>0.001</mu1><mu2>0.001</mu2></gazebo>
+  <gazebo reference="FR_wheel_link"><mu1>0.1</mu1><mu2>0.1</mu2></gazebo>
+  <gazebo reference="BR_castor_link"><mu1>0.001</mu1><mu2>0.001</mu2></gazebo>
+  <gazebo reference="BR_wheel_link"><mu1>0.1</mu1><mu2>0.1</mu2></gazebo>
+
+</robot>

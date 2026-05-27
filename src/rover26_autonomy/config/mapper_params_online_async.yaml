@@ -1,0 +1,163 @@
+slam_toolbox:
+  ros__parameters:
+
+    # ── Solver ────────────────────────────────────────────────────────────────
+    # Ceres is the best available solver — keep these as-is.
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    # ── Frames & topics ───────────────────────────────────────────────────────
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+
+    scan_topic: /scan
+
+    use_map_saver: true
+    mode: submapping
+
+    # ── ROS / TF timing ───────────────────────────────────────────────────────
+    debug_logging: false
+    throttle_scans: 1                 # process every scan that arrives (no skipping)
+
+    # How often SLAM publishes the map → odom TF (seconds).
+    # 0.02 = 50 Hz — already good, keep it.
+    transform_publish_period: 0.02
+
+    # CHANGED: 5.0 → 2.0
+    # How often the occupancy grid is recomputed from the pose graph (seconds).
+    # Halving this keeps the displayed map fresher during fast exploration.
+    map_update_interval: 2.0
+
+    # CHANGED: 0.05 → 0.03 m/px
+    # Finer map resolution captures narrower lane boundaries and tight obstacles.
+    # Trade-off: slightly more RAM and map-update CPU. 0.03 is still very safe.
+    resolution: 0.03
+
+    restamp_tf: false
+
+    # CHANGED: 20.0 → 12.0 m
+    # The physical LiDAR maxes out at 12 m (set in scan_merger params).
+    # Telling SLAM to expect up to 20 m just wastes search space and adds noise
+    # from phantom returns. Match this to the sensor's actual max_laser_range.
+    min_laser_range: 0.1
+    max_laser_range: 12.0
+
+    # CHANGED: 0.5 → 0.1 s  ← biggest frequency win
+    # SLAM will only process one scan per minimum_time_interval.
+    # 0.5 s = 2 Hz (old) vs 0.1 s = 10 Hz (new).
+    # Higher rate means the pose graph is updated far more often → smoother,
+    # more accurate map and TF. CPU cost is proportional, watch htop.
+    minimum_time_interval: 0.1
+    map_size_x: 100.0             # Initial width of the map in meters
+    map_size_y: 100.0             # Initial height of the map in meters
+    map_start_x: 0.0              # Keeps the robot at the center of the 100x100 grid
+    map_start_y: 0.0
+    generate_submaps: true
+    # CHANGED: 0.2 → 0.3 s
+    # How long tf2 waits for a transform lookup before giving up.
+    # Slightly more generous to handle the 10 Hz scan arrival jitter.
+    transform_timeout: 0.3
+
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true
+
+    # ── Keyframe thresholds ───────────────────────────────────────────────────
+    use_scan_matching: true
+    use_scan_barycenter: true
+
+    # CHANGED: 0.5 → 0.2 m
+    # A new pose-graph node (keyframe) is only added when the robot has moved
+    # this far since the last keyframe. Smaller = denser graph = more accurate
+    # loop closures but more RAM/CPU. 0.2 m is a safe middle ground.
+    minimum_travel_distance: 0.2
+
+    # CHANGED: 0.5 → 0.2 rad (~11°)
+    # Same idea but for heading change. Helps capture sharp turns more accurately.
+    minimum_travel_heading: 0.2
+
+    check_min_dist_and_heading_precisely: false
+
+    # CHANGED: 10 → 20 scans
+    # Larger rolling buffer → scan matching has more reference scans to align
+    # against → better local accuracy, especially in featureless corridors.
+    scan_buffer_size: 20
+
+    scan_buffer_maximum_scan_distance: 10.0
+
+    # CHANGED: 0.1 → 0.45
+    # Minimum scan-match response score to accept a link between two poses.
+    # 0.1 was too permissive — bad matches pollute the graph.
+    # 0.45 rejects weak associations and keeps the graph clean.
+    link_match_minimum_response_fine: 0.45
+
+    # CHANGED: 1.5 → 2.0 m
+    # Maximum distance between poses to attempt a scan-match link.
+    # Slightly wider search helps in faster motion between keyframes.
+    link_scan_maximum_distance: 2.0
+
+    # ── Loop closure ──────────────────────────────────────────────────────────
+    do_loop_closing: true
+
+    # CHANGED: 3.0 → 6.0 m
+    # Radius around current pose to search for loop closure candidates.
+    # Larger radius catches loops in bigger environments (competition track).
+    loop_search_maximum_distance: 6.0
+
+    # CHANGED: 10 → 5
+    # How many consecutive matching poses are needed before a loop is accepted.
+    # Reducing from 10 to 5 lets SLAM detect loops sooner and correct drift earlier.
+    loop_match_minimum_chain_size: 5
+
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
+
+    # ── Correlation (local scan matching search space) ─────────────────────────
+    # CHANGED: 0.5 → 0.8 m
+    # Size of the local search window for correlation-based scan matching.
+    # Wider window = more robust to odometry drift between keyframes.
+    # Cost: ~2.5× more search evaluations, mitigated by the Ceres solver.
+    correlation_search_space_dimension: 0.8
+
+    correlation_search_space_resolution: 0.01    # keep fine — already good
+    correlation_search_space_smear_deviation: 0.1
+
+    # CHANGED: 8.0 → 10.0 m
+    # Same concept but for the loop closure search window.
+    loop_search_space_dimension: 10.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ── Scan matcher penalties ────────────────────────────────────────────────
+    # CHANGED: 0.5 → 0.3
+    # Lower distance penalty = scan matcher is less conservative about accepting
+    # matches that disagree with the odometry position. Since our wheel+IMU odom
+    # is already pretty accurate, we can trust the scan match more.
+    distance_variance_penalty: 0.3
+
+    # CHANGED: 1.0 → 0.6
+    # Lower angle penalty = scan matcher trusts its own angle result more.
+    # Safe to reduce because the IMU gives us reliable heading — the scan
+    # matcher rarely needs to correct much on the heading axis.
+    angle_variance_penalty: 0.6
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.349
+    coarse_angle_resolution: 0.0349
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+    min_pass_through: 2
+
+    # CHANGED: 0.1 → 0.65
+    # Probability threshold above which a cell is marked as occupied.
+    # 0.1 was far too low — almost every cell was being marked occupied,
+    # turning the map into noise. 0.65 is the standard ROS default and
+    # produces clean, trustworthy occupancy grids.
+    occupancy_threshold: 0.65

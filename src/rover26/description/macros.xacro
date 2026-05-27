@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="castor_assembly" params="prefix x y swivel_axis wheel_axis castor_inertia_xyz castor_mass">
+
+    <link name="${prefix}_castor_link">
+      <inertial>
+        <origin xyz="${castor_inertia_xyz}" rpy="0 0 0"/>
+        <mass value="${castor_mass}"/>
+        <inertia ixx="0.000416841288535765" ixy="0" ixz="0"
+                 iyy="0.000711554310816727" iyz="0" izz="0.000413607412951169"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="file://$(find rover26)/meshes/castor${prefix}.STL"/></geometry>
+        <material name="yellow"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="file://$(find rover26)/meshes/castor${prefix}.STL"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}_castor_joint" type="continuous">
+      <origin xyz="${x} ${y} -0.124" rpy="0 0 0"/>
+      <parent link="base_link"/>
+      <child link="${prefix}_castor_link"/>
+      <axis xyz="0 0 ${swivel_axis}"/>
+      <dynamics damping="0.3" friction="0.2"/>
+    </joint>
+
+    <link name="${prefix}_wheel_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.374612932792007"/>
+        <inertia ixx="0.000379650011198176" ixy="0" ixz="0"
+                 iyy="0.000379650011198176" iyz="0" izz="0.000685202275649917"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="file://$(find rover26)/meshes/wheel${prefix}.STL"/></geometry>
+        <material name="yellow"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="file://$(find rover26)/meshes/wheel${prefix}.STL"/></geometry>
+      </collision>
+    </link>
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <origin xyz="0.015 0 -0.070418" rpy="-1.5708 0 0"/>
+      <parent link="${prefix}_castor_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <axis xyz="0 0 ${wheel_axis}"/>
+      <dynamics damping="0.1" friction="0.02"/>
+    </joint>
+
+  </xacro:macro>
+
+</robot>

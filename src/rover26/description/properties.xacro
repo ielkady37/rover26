@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Wheel properties -->
+  <xacro:property name="wheel_radius" value="0.1"/>
+  <xacro:property name="wheel_separation" value="0.6972"/>
+
+  <!-- Main drive wheel limits -->
+  <xacro:property name="main_wheel_effort" value="30"/>
+  <xacro:property name="main_wheel_velocity" value="12"/>
+
+  <!-- Castor swivel limits -->
+  <xacro:property name="castor_effort" value="2"/>
+  <xacro:property name="castor_velocity" value="10"/>
+
+  <!-- Castor wheel limits -->
+  <xacro:property name="small_wheel_effort" value="5"/>
+  <xacro:property name="small_wheel_velocity" value="20"/>
+
+  <!-- Friction -->
+  <xacro:property name="main_wheel_friction" value="1.0"/>
+  <xacro:property name="castor_friction" value="0.5"/>
+
+</robot>
