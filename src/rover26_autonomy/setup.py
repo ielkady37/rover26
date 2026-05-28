@@ -31,6 +31,7 @@ setup(
 
             # Pothole detection
             'pothole_detection       = rover26_autonomy.nodes.pothole_detection_node:main',
+            'pothole_publisher       = rover26_autonomy.nodes.pothole_publisher_node:main',
 
             # Lane path publisher
             'lane_path_publisher     = rover26_autonomy.nodes.generic_points_publisher_node:main',

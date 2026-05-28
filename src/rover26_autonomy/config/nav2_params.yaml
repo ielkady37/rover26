@@ -1,38 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# rover26 — Nav2 Parameters
-# ═══════════════════════════════════════════════════════════════════════════════
-# ALL FIXES APPLIED (accumulated across tuning sessions):
-#
-#   [FIX-TURN]      PathAngleCritic raised, PreferForward lowered, wz_std raised
-#                   → robot commits to sharp turns instead of cutting corners
-#
-#   [FIX-GOAL]      xy/yaw tolerances set, GoalCritic threshold tightened
-#                   → robot stops on the goal instead of replanning nearby
-#
-#   [FIX-CIRCLE]    GoalAngleCritic threshold matched, GoalCritic weight reduced
-#                   → no more circular orbits near goal
-#
-#   [FIX-OBSTACLE]  cost_scaling_factor lowered, inflation_radius tuned for 4m lane
-#   [FIX-OBSTACLE]  cost_penalty + analytic_expansion_max_cost added to planner
-#                   → planner routes away from obstacles, not toward them
-#
-#   [FIX-SLOW]      CostCritic weight reduced, PreferForward balanced
-#                   → robot maintains speed near obstacles
-#
-#   [FIX-SMOOTH]    Planner smoother weights raised, refinement passes increased
-#                   → cleaner, smoother paths through the lane
-#
-#   [FIX-REPLAN]    BT switched to replan-only-if-invalid, planner freq lowered
-#                   → path locked after initial plan, not replanned constantly
-#
-#   [FIX-BACKWARD]  REEDS_SHEPP replaces DUBIN
-#                   → planner uses short reverse instead of full forward loop
-#
-#   [FIX-OSCILLATE] PathAlignCritic weight + occupancy ratio loosened,
-#                   PathFollowCritic weight reduced, XY tolerance widened
-#                   → robot doesn't oscillate trying to snap exactly to path
-# ═══════════════════════════════════════════════════════════════════════════════
-
 amcl:
   ros__parameters:
     alpha1: 0.2
@@ -82,15 +47,7 @@ bt_navigator:
     default_server_timeout: 20
     wait_for_service_timeout: 1000
     action_server_result_timeout: 900.0
-    # [FIX-REPLAN] Plans once per goal, only replans if the path becomes
-    # physically blocked. Default BT replans at 1Hz continuously.
-    # Since lane_goal_publisher sends a new NavigateToPose per waypoint,
-    # each new goal gets exactly one planning call then locks.
-    # Replans on a 1Hz timer — always recomputes shortest path around
-    # any new obstacles detected mid-execution. Best for dynamic environments.
     default_nav_to_pose_bt_xml: "/opt/ros/jazzy/share/nav2_bt_navigator/behavior_trees/navigate_w_replanning_time.xml"
-    # Replan rate in seconds (navigate_w_replanning_time.xml uses this).
-    # 1.0 = replan every second. Lower = more responsive, more CPU.
     replan_only_if_path_is_changed: false
     navigators: ["navigate_to_pose", "navigate_through_poses"]
     navigate_to_pose:
@@ -117,35 +74,18 @@ controller_server:
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.5
-      # Was 10.0s — too short. Near obstacles the robot legitimately
-      # slows down and may take longer than 10s to clear. At 20.0s it
-      # has enough time to navigate around without being aborted.
       movement_time_allowance: 20.0
 
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      # BACKUP CHECKER — lane_goal_publisher._check_goal_proximity() fires
-      # first at 10Hz on XY only, cancelling the Nav2 goal before this
-      # checker evaluates it. These values are a safety net for edge cases.
-      # [FIX-OSCILLATE] Was 0.20m — too tight caused oscillation trying to
-      # land exactly on the waypoint. At 0.65m matches config_params.XY_GOAL_TOL.
       xy_goal_tolerance: 0.65
-      # Yaw tolerance used as a soft backup gate. Loose enough that heading
-      # noise at intermediate stepping-stone waypoints doesn't block completion,
-      # tight enough to be meaningful if Nav2's checker fires independently.
-      # 0.5 rad ≈ 28° — rover can be up to 28° off heading and still succeed.
       yaw_goal_tolerance: 0.50
 
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
-      # Was 56 — at 0.05s per step that's 2.8s lookahead. At 80 steps
-      # MPPI sees 4.0s ahead and can plan around obstacles earlier.
       time_steps: 80
       model_dt: 0.05
-      # Was 1000 — near obstacles more samples = better chance of finding
-      # a valid trajectory that threads around the obstacle. 2000 doubles
-      # exploration without significant CPU cost on modern hardware.
       batch_size: 3000
       iteration_count: 3
       temperature: 0.1
@@ -155,19 +95,13 @@ controller_server:
       regenerate_noises: true
       prune_distance: 8.0
       transform_tolerance: 0.1
-
       vx_std: 0.6
       vy_std: 0.2
-      # [FIX-TURN] Was 0.4 — MPPI never sampled tight-turn trajectories.
-      # At 0.65 the optimizer explores sharp rotation candidates.
       wz_std: 0.65
-
       vx_max: 5.0
-      # Negative vx_min enables reverse motion for Reeds-Shepp path segments.
       vx_min: -1.0
       vy_max: 0.5
       wz_max: 1.9
-
       ax_max: 6.0
       ax_min: -6.0
       ay_max: 3.0
@@ -194,49 +128,27 @@ controller_server:
       GoalCritic:
         enabled: true
         cost_power: 1
-        # [FIX-CIRCLE] Was 8.0 — pulled too hard from too far, fought
-        # PathFollowCritic and produced circular orbits.
         cost_weight: 5.0
-        # [FIX-CIRCLE] Was 1.5m — GoalCritic activated too early and fought
-        # PathFollowCritic across the whole final approach.
-        # At 0.8m the handoff from path-following to goal-homing is clean.
         threshold_to_consider: 0.8
 
       GoalAngleCritic:
         enabled: true
         cost_power: 1
-        # Kept enabled — with REEDS_SHEPP the planner now generates paths
-        # that achieve goal heading via reverse maneuver, so GoalAngleCritic
-        # and the path work together instead of producing circles.
         cost_weight: 3.0
-        # Activates at same distance as GoalCritic for coordinated final approach.
         threshold_to_consider: 0.8
 
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        # High forward bias — robot keeps moving on open straights and through
-        # the lane without hesitating. Reeds-Shepp reverse still works near goal
-        # because GoalCritic + GoalAngleCritic override this when close enough.
         cost_weight: 10.0
-        # [FIX-TURN] Wider threshold so the critic doesn't suppress sharp turns.
         threshold_to_consider: 0.5
 
       CostCritic:
-        # Re-enabled at minimal weight — just enough for MPPI to be aware of
-        # obstacle positions when sampling trajectories. Without this, MPPI
-        # samples trajectories blindly and near obstacles finds no valid ones,
-        # outputting zero velocity and stopping the robot.
-        # At 0.5 the cost is too low to cause braking but high enough to steer
-        # sampled trajectories away from the obstacle so MPPI always has
-        # valid forward options to pick from.
         enabled: true
         cost_power: 1
-        cost_weight: 0.5
+        cost_weight: 3.0
         near_collision_cost: 253
-        # High critical_cost so only truly lethal cells (right at obstacle)
-        # trigger emergency stop — not normal inflation zone cells.
-        critical_cost: 600.0
+        critical_cost: 300.0
         consider_footprint: true
         collision_cost: 1000000.0
         near_goal_distance: 1.0
@@ -245,25 +157,16 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        # [FIX-OSCILLATE] Was 14.0 — snapped robot hard to path centreline.
-        # Any drift triggered aggressive correction → oscillation.
         cost_weight: 8.0
-        # [FIX-OSCILLATE] Was 0.05 — 95% of trajectory had to be on-path.
-        # Extremely tight, any wobble caused a full correction cycle.
-        # At 0.15: robot can be off-path for 15% of trajectory without correction.
         max_path_occupancy_ratio: 0.15
         trajectory_point_step: 4
         threshold_to_consider: 0.5
-        # [FIX-TURN] Was 20 — targeted past the bend in sharp curves, causing
-        # corner-cutting. At 10 the reference point stays inside the curve.
         offset_from_furthest: 10
         use_path_orientations: false
 
       PathFollowCritic:
         enabled: true
         cost_power: 1
-        # [FIX-OSCILLATE] Was 5.0 — combined with PathAlignCritic caused
-        # the robot to snap aggressively back to path after any deviation.
         cost_weight: 3.0
         offset_from_furthest: 5
         threshold_to_consider: 1.4
@@ -271,13 +174,9 @@ controller_server:
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        # [FIX-TURN] Was 2.0 — robot barely cared about heading at curves.
-        # At 6.5 it actively rotates to face the path direction in sharp turns.
         cost_weight: 6.5
         offset_from_furthest: 4
         threshold_to_consider: 0.5
-        # [FIX-TURN] Was 1.0 rad (~57°) — tolerated huge heading errors.
-        # At 0.5 rad (~29°) heading correction triggers much earlier.
         max_angle_to_furthest: 0.5
         mode: 0
 
@@ -289,24 +188,11 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_footprint
       rolling_window: true
-      # Was 3m — obstacles just ahead were outside the planning window.
-      # At 8m the planner sees and routes around them before committing.
       width: 8
       height: 8
       resolution: 0.05
       footprint: "[[0.25, 0.35], [0.25, -0.35], [-0.25, -0.35], [-0.25, 0.35]]"
-      plugins: ["voxel_layer", "inflation_layer"]
-      inflation_layer:
-        plugin: "nav2_costmap_2d::InflationLayer"
-        # [FIX-OBSTACLE] Was 3.0 — costs fell off quickly (steep gradient),
-        # leaving a cheap fringe the planner threaded through.
-        # Lower value = slower cost decay = wider expensive band around obstacles.
-        # At 1.5 the gradient stays expensive all the way to inflation_radius,
-        # making the planner genuinely route around objects.
-        cost_scaling_factor: 5.0
-        # [FIX-OBSTACLE] Was 0.55m. Lane is 4m wide, robot inscribed radius
-        # is 0.25m. 0.7m gives 0.45m safety margin well within the lane width.
-        inflation_radius: 0.50
+      plugins: ["voxel_layer", "pothole_layer", "inflation_layer"]
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -327,12 +213,30 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 2.5
           obstacle_min_range: 0.0
+      pothole_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: potholes
+        potholes:
+          topic: /pothole_obstacles
+          data_type: "PointCloud2"
+          marking: True
+          clearing: True
+          max_obstacle_height: 0.10
+          min_obstacle_height: 0.0
+          obstacle_max_range: 10.0
+          obstacle_min_range: 0.0
+          raytrace_max_range: 5.0
+          raytrace_min_range: 0.0
+          transform_tolerance: 0.5
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 2.0
+        inflation_radius: 1.0
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      # Was 1.0Hz — obstacle marks were stale when planner ran.
-      # At 3.0Hz global costmap reflects LiDAR hits quickly.
       update_frequency: 3.0
       publish_frequency: 2.0
       global_frame: map
@@ -340,8 +244,6 @@ global_costmap:
       robot_radius: 0.25
       resolution: 0.05
       track_unknown_space: true
-      # Keeps costmap centred on robot — without this the costmap locks
-      # to static map bounds and stops updating around the robot.
       rolling_window: true
       width: 20
       height: 20
@@ -365,7 +267,6 @@ global_costmap:
         map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # Tight gradient — costs drop fast from obstacle edge.
         cost_scaling_factor: 5.0
         inflation_radius: 0.50
       always_send_full_costmap: True
@@ -385,12 +286,10 @@ planner_server:
     GridBased:
       plugin: "nav2_theta_star_planner::ThetaStarPlanner"
       how_many_corners: 8
-      # 10:1 ratio — distance dominates completely.
-      # Planner goes straight to goal, minimum detour around obstacles only.
       w_euc_cost: 10.0
       w_traversal_cost: 1.0
-      w_heuristic_param: 1.0 = optimal shortest path guaranteed.
       w_heuristic_param: 1.0
+
 smoother_server:
   ros__parameters:
     smoother_plugins: ["simple_smoother"]
@@ -488,9 +387,6 @@ collision_monitor:
       type: "polygon"
       action_type: "approach"
       footprint_topic: "/local_costmap/published_footprint"
-      # Was 1.2s — at 0.5m/s this stopped the robot 0.6m before any obstacle.
-      # 0.3s = stops only when obstacle is 0.15m away. CollisionMonitor is a
-      # last-resort hard stop, not a speed regulator. Let MPPI handle the rest.
       time_before_collision: 0.3
       simulation_time_step: 0.1
       min_points: 6

@@ -20,14 +20,14 @@ TRANSFER TO REAL HARDWARE CHECKLIST
 
 CLASS INDEX
 ───────────
-  LaneDetection      Sliding-window tracker, steering, debug flags
-  PotholeDetection   Blob area/shape/range filters, costmap gate, speed hint
-  LanePublisher      Synthetic scan parameters, RViz visualization rates
-  LaneGoalPublisher  Three-tier goal computation, recovery, Nav2 tolerances
-  RosTopics          Central registry of every ROS topic name and TF frame
-  Odometry           Wheel odometry physical geometry and joint names
-  Physical           Fixed calibration constants (derived from URDF/camera)
-  Debug              Global verbosity and OpenCV display flags
+LaneDetection      Sliding-window tracker, steering, debug flags
+PotholeDetection   Blob area/shape/range filters, costmap gate, speed hint
+LanePublisher      Synthetic scan parameters, RViz visualization rates
+LaneGoalPublisher  Three-tier goal computation, recovery, Nav2 tolerances
+RosTopics          Central registry of every ROS topic name and TF frame
+Odometry           Wheel odometry physical geometry and joint names
+Physical           Fixed calibration constants (derived from URDF/camera)
+Debug              Global verbosity and OpenCV display flags
 
 ═══════════════════════════════════════════════════════════════════════════════
 """
@@ -109,21 +109,21 @@ class PotholeDetection:
 
     # ── White blob area filtering (pixels²) ───────────────────────────────────
     # Adjust based on camera height and pothole size on your track.
-    MIN_AREA: int = 80       # Minimum pothole blob size (lowered 300→80 for far detection)
-    MAX_AREA: int = 15000     # Reject oversized blobs (lane lines, rover body reflections)
+    MIN_AREA: int = 500       # Minimum pothole blob size (lowered 300→80 for far detection)
+    MAX_AREA: int = 70000     # Reject oversized blobs (lane lines, rover body reflections)
 
     # ── Shape descriptor thresholds ───────────────────────────────────────────
     # These filter out elongated lane-line fragments while accepting round potholes.
     #   Lane lines:     circularity ≈ 0.05  →  easily rejected by MIN_CIRCULARITY
     #   Potholes:       circularity ≈ 0.4+  →  easily accepted
-    MIN_CIRCULARITY: float = 0.15   # Lane lines score ~0.05, easily rejected
+    MIN_CIRCULARITY: float = 0.8   # Lane lines score ~0.05, easily rejected
     MAX_CIRCULARITY: float = 1.0
-    MAX_ASPECT_RATIO: float = 4.0   # Lane lines are far wider than tall; potholes are not
+    MAX_ASPECT_RATIO: float = 3.0   # Lane lines are far wider than tall; potholes are not
     MIN_SOLIDITY: float = 0.40      # Lane-line fragments are jagged; potholes are compact
 
     # ── Detection range (metres) — split into two zones ───────────────────────
     MIN_DETECTION_M: float = 0.0    # Ignore very close detections (rover body noise)
-    MAX_DETECTION_M: float = 7.0    # Detect potholes up to this distance (speed hint range)
+    MAX_DETECTION_M: float = 10.0    # Detect potholes up to this distance (speed hint range)
 
     # ── Costmap publish gate (metres) ─────────────────────────────────────────
     # Potholes farther than this do NOT enter Nav2's costmap, preventing premature
@@ -133,17 +133,12 @@ class PotholeDetection:
     # At high rover speeds, raise this value so MPPI has enough lookahead to plan
     # an avoidance path. TUNING: raise if rover reaches pothole before dodging;
     # lower if rover swerves well before the pothole is a real threat.
-    COSTMAP_PUBLISH_M: float = 5.0
+    COSTMAP_PUBLISH_M: float = 9.0
 
-    # ── Camera intrinsics (must match your camera hardware) ───────────────────
-    CAM_HEIGHT_M:  float = 0.30    # Height of camera above ground (metres)
-    CAM_HFOV_DEG:  float = 62.0   # Horizontal field of view (degrees)
+    RADIUS_SCALE:  float = 1.0   # tune until logged r matches real pothole size
+    MIN_RADIUS_M:  float = 0.10  # raise if close potholes look too small in costmap
+    MAX_RADIUS_M:  float = 0.60  # realistic pothole max
 
-    # ── Speed hint scaling ────────────────────────────────────────────────────
-    # Speed factor = clip(closest_distance_m / MAX_DETECTION_M, MIN_FACTOR, MAX_FACTOR)
-    # This gives the rover 2-3 seconds of planning time at typical speeds (2-4 m/s).
-    SPEED_HINT_MIN_FACTOR: float = 0.15  # Minimum speed factor (pothole at rover's foot)
-    SPEED_HINT_MAX_FACTOR: float = 1.0   # Maximum speed factor (pothole at MAX_DETECTION_M)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -292,30 +287,31 @@ class RosTopics:
     TOPIC GRAPH
     ───────────
     INPUT (Sensors):
-      CAMERA_IMAGE    /camera/image          sensor_msgs/Image        ← camera driver
-      IMU             /imu                   sensor_msgs/Imu          ← IMU driver
-      JOINT_STATES    /joint_states          sensor_msgs/JointState   ← sim / HW bridge
-      LIDAR_HW        /scan_hw               sensor_msgs/LaserScan    ← hardware LiDAR
+    CAMERA_IMAGE    /camera/image          sensor_msgs/Image        ← camera driver
+    IMU             /imu                   sensor_msgs/Imu          ← IMU driver
+    JOINT_STATES    /joint_states          sensor_msgs/JointState   ← sim / HW bridge
+    LIDAR_HW        /scan_hw               sensor_msgs/LaserScan    ← hardware LiDAR
 
     INTERNAL PIPELINE:
-      LANE_STATUS     /lane_status           rover26/LaneStatus       lane → pothole & goals
-      POTHOLE_OBSTACLES /pothole_obstacles   sensor_msgs/PointCloud2  → Nav2 costmap
-      POTHOLE_SPEED   /pothole_speed         std_msgs/Float32         → speed controller
-      LANE_SCAN       /lane_scan             sensor_msgs/LaserScan    → Nav2 (synthetic)
-      LANE_MARKERS    /lane_markers          visualization_msgs/MarkerArray → RViz
-      GOAL_POSE       /goal_pose             geometry_msgs/PoseStamped → Nav2
-      GOAL_MARKERS    /goal_markers          visualization_msgs/MarkerArray → RViz
-      LANE_GOALS_VIZ  /lane_goals_viz        visualization_msgs/MarkerArray → RViz
-      ODOM            /odom                  nav_msgs/Odometry        → Nav2 / SLAM
-      LIDAR_SCAN      /scan                  sensor_msgs/LaserScan    → Nav2 (re-timestamped)
+    LANE_STATUS        /lane_status               rover26/LaneStatus       lane → pothole & goals
+    POTHOLE_DETECTIONS /pothole_detections        rover26/PotholeDetections camera → pothole blobs
+    POTHOLE_OBSTACLES  /pothole_obstacles         sensor_msgs/PointCloud2  → Nav2 costmap
+    POTHOLE_SPEED      /pothole_speed             std_msgs/Float32         → speed controller
+    LANE_SCAN          /lane_scan                 sensor_msgs/LaserScan    → Nav2 (synthetic)
+    LANE_MARKERS       /lane_markers              visualization_msgs/MarkerArray → RViz
+    GOAL_POSE          /goal_pose                 geometry_msgs/PoseStamped → Nav2
+    GOAL_MARKERS       /goal_markers              visualization_msgs/MarkerArray → RViz
+    LANE_GOALS_VIZ     /lane_goals_viz            visualization_msgs/MarkerArray → RViz
+    ODOM               /odom                      nav_msgs/Odometry        → Nav2 / SLAM
+    LIDAR_SCAN         /scan                      sensor_msgs/LaserScan    → Nav2 (re-timestamped)
 
     OUTPUT (Commands):
-      CMD_VEL_STAMPED /cmd_vel_stamped       geometry_msgs/TwistStamped  ← twist_mux
-      CMD_VEL         /cmd_vel               geometry_msgs/Twist         → motor driver
+    CMD_VEL_STAMPED /cmd_vel_stamped       geometry_msgs/TwistStamped  ← twist_mux
+    CMD_VEL         /cmd_vel               geometry_msgs/Twist         → motor driver
 
     TF TREE:
-      map → odom → base_footprint → base_link → [sensor links]
-      SLAM  odom_tf_broadcaster  robot_state_publisher
+    map → odom → base_footprint → base_link → [sensor links]
+    SLAM  odom_tf_broadcaster  robot_state_publisher
     """
 
     # ── Input (sensor) topics ──────────────────────────────────────────────────
@@ -326,8 +322,8 @@ class RosTopics:
 
     # ── Internal pipeline topics ───────────────────────────────────────────────
     LANE_STATUS:        str = '/lane_status'          # Published by: lane_detection_node
-    POTHOLE_OBSTACLES:  str = '/pothole_obstacles'    # Published by: pothole_detection_node
-    POTHOLE_SPEED:      str = '/pothole_speed'        # Published by: pothole_detection_node
+    POTHOLE_DETECTIONS: str = '/pothole_detections'   # Published by: pothole_detection_node
+    POTHOLE_OBSTACLES:  str = '/pothole_obstacles'    # Published by: pothole_publisher_node (Nav2 costmap)
     LANE_SCAN:          str = '/lane_scan'            # Published by: generic_points_publisher_node
     LANE_MARKERS:       str = '/lane_markers'         # Published by: generic_points_publisher_node
     GOAL_POSE:          str = '/goal_pose'            # Published by: lane_goal_publisher_node
@@ -406,7 +402,7 @@ class Physical:
     # ── Ground patch visible in bird's-eye view ────────────────────────────────
     GROUND_WIDTH_M:       float = 9.0    # Left-right extent of warped view (metres)
     LANE_WIDTH_M:         float = 4.0    # Physical lane width (metres) — measure on your track
-    GROUND_HEIGHT_M:      float = 10.0  # Forward extent of warped view (metres)
+    GROUND_HEIGHT_M:      float = 5.0  # Forward extent of warped view (metres)
     GROUND_START_AHEAD_M: float = 0.5   # Distance to start of visible patch (metres)
 
     # ── Lateral bias trim ──────────────────────────────────────────────────────

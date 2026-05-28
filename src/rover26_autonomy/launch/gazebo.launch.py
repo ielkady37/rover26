@@ -345,6 +345,13 @@ def generate_launch_description():
                     parameters=[{'use_sim_time': True}],
                     output='screen',
                 ),
+                Node(
+                    package='rover26_autonomy',
+                    executable='pothole_publisher',
+                    name='pothole_publisher',
+                    parameters=[{'use_sim_time': True}],
+                    output='screen',
+                ),
                 # ── Generic Points Publisher ───────────────────────────────────
                 # Converts /lane_status polynomial coefficients into a synthetic
                 # LaserScan on /detection/scan so SLAM treats lane edges as
@@ -391,13 +398,13 @@ def generate_launch_description():
                     output='screen',
                     parameters=[nav2_params, {'use_sim_time': True}],
                 ),
-                Node(
-                    package='nav2_costmap_2d',
-                    executable='nav2_costmap_2d',
-                    name='local_costmap',
-                    output='screen',
-                    parameters=[nav2_params, {'use_sim_time': True}],
-                ),
+                # Node(
+                #     package='nav2_costmap_2d',
+                #     executable='nav2_costmap_2d',
+                #     name='local_costmap',
+                #     output='screen',
+                #     parameters=[nav2_params, {'use_sim_time': True}],
+                # ),
                 Node(
                     package='nav2_lifecycle_manager',
                     executable='lifecycle_manager',
@@ -411,7 +418,7 @@ def generate_launch_description():
                             'planner_server',
                             'behavior_server',
                             'bt_navigator',
-                            'local_costmap',
+                            # 'local_costmap',
                         ],
                         'bond_timeout': 0.0,
                     }],

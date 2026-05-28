@@ -289,7 +289,7 @@
       </link>
     </model>
 
-    <model name="pothole_2"><static>true</static><pose>0 6.0 0.006 0 0 0</pose>
+    <model name="pothole_2"><static>true</static><pose>0 -4.0 0.006 0 0 0</pose>
       <link name="link">
         <visual name="v">
           <geometry><cylinder><radius>0.30</radius><length>0.01</length></cylinder></geometry>
@@ -313,7 +313,7 @@
       </link>
     </model>
 
-        <model name="red_obs_2">
+        <!-- <model name="red_obs_2">
       <static>true</static>
       <pose> 0 -4.0 0.25 0 0 0</pose>
       <link name="link">
@@ -325,7 +325,7 @@
           <material><ambient>0.9 0.1 0.1 1</ambient><diffuse>0.9 0.1 0.1 1</diffuse></material>
         </visual>
       </link>
-    </model>
+    </model> -->
 
     <!-- <model name="red_obs_3">
       <static>true</static>
@@ -358,7 +358,7 @@
     <!-- Green obstacle -->
     <model name="green_obs_1">
       <static>true</static>
-      <pose>-0.5 -8.0 0.25 0 0 0</pose>
+      <pose>-4.5 -8.0 0.25 0 0 0</pose>
       <link name="link">
         <collision name="c">
           <geometry><cylinder><radius>0.15</radius><length>0.5</length></cylinder></geometry>
