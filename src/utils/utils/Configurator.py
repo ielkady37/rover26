@@ -8,6 +8,7 @@ class Configurator():
     PID_PARAMS = "pid_ks"
     LOCOMOTION = "locomotion"
     MISSION = "mission"
+    CAMERAS = "cameras"
     
     def __init__(self):
         self.__configFile = ''
@@ -42,6 +43,8 @@ class Configurator():
             config_filename = Configurator.LOCOMOTION
         elif data_type == Configurator.MISSION:
             config_filename = Configurator.MISSION
+        elif data_type == Configurator.CAMERAS:
+            config_filename = Configurator.CAMERAS
         else:
             self.__raiseTypeError(data_type)
         

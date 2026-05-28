@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'camera_streaming_node = cv.nodes.CameraStreamingNode:main',
+            'camera_viewer_node = cv.nodes.CameraViewerNode:main',
         ],
     },
 )
