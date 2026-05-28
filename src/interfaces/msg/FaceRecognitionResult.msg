@@ -1,0 +1,5 @@
+std_msgs/Header header
+bool target_detected
+float32 confidence_score
+bool lock_confirmed
+sensor_msgs/Image annotated_frame

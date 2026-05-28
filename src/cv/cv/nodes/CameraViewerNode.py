@@ -22,6 +22,7 @@ from sensor_msgs.msg import Image
 from utils.Logger import RoverLogger
 from utils.Configurator import Configurator
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy
+from interfaces.msg import FaceRecognitionResult
 
 _QOS_DEPTH = 10
 
@@ -36,6 +37,7 @@ class CameraViewerNode(Node):
         self._frames: dict[str, object] = {}
 
         self._setup_subscriptions()
+        self._setup_face_recognition_subscription()
 
     # ------------------------------------------------------------------
     # Setup
@@ -79,6 +81,21 @@ class CameraViewerNode(Node):
                 )
                 self._log.info(f'CameraViewerNode: subscribed to /{cam_name}/calibrated')
 
+    def _setup_face_recognition_subscription(self) -> None:
+        result_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=_QOS_DEPTH,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._frames['face recognition'] = None
+        self.create_subscription(
+            FaceRecognitionResult,
+            '/face_recognition',
+            self._on_face_result,
+            result_qos,
+        )
+        self._log.info('CameraViewerNode: subscribed to /face_recognition')
+
     # ------------------------------------------------------------------
     # Subscription callback
 
@@ -87,6 +104,18 @@ class CameraViewerNode(Node):
             self._frames[window_title] = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
             self._log.err(f'CameraViewerNode: conversion error for "{window_title}": {exc}')
+
+    def _on_face_result(self, msg: FaceRecognitionResult) -> None:
+        try:
+            frame = self._bridge.imgmsg_to_cv2(msg.annotated_frame, desired_encoding='bgr8')
+            label = 'LOCKED' if msg.lock_confirmed else ('DETECTED' if msg.target_detected else '')
+            if label:
+                colour = (0, 255, 0) if msg.lock_confirmed else (0, 200, 255)
+                cv2.putText(frame, f'{label}  {msg.confidence_score:.2f}',
+                            (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, colour, 2)
+            self._frames['face recognition'] = frame
+        except Exception as exc:
+            self._log.err(f'CameraViewerNode: face result error: {exc}')
 
     # ------------------------------------------------------------------
     # Display (called from the main loop)

@@ -9,6 +9,7 @@ class Configurator():
     LOCOMOTION = "locomotion"
     MISSION = "mission"
     CAMERAS = "cameras"
+    FACE_RECOGNITION = "face_recognition"
     
     def __init__(self):
         self.__configFile = ''
@@ -45,6 +46,8 @@ class Configurator():
             config_filename = Configurator.MISSION
         elif data_type == Configurator.CAMERAS:
             config_filename = Configurator.CAMERAS
+        elif data_type == Configurator.FACE_RECOGNITION:
+            config_filename = Configurator.FACE_RECOGNITION
         else:
             self.__raiseTypeError(data_type)
         
