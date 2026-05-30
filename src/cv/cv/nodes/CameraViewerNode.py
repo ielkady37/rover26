@@ -22,7 +22,7 @@ from sensor_msgs.msg import Image
 from utils.Logger import RoverLogger
 from utils.Configurator import Configurator
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy
-from interfaces.msg import FaceRecognitionResult
+from interfaces.msg import FaceRecognitionResult, PotholesDetectionResult
 
 _QOS_DEPTH = 10
 
@@ -38,6 +38,7 @@ class CameraViewerNode(Node):
 
         self._setup_subscriptions()
         self._setup_face_recognition_subscription()
+        self._setup_potholes_detection_subscription()
 
     # ------------------------------------------------------------------
     # Setup
@@ -95,6 +96,21 @@ class CameraViewerNode(Node):
             result_qos,
         )
         self._log.info('CameraViewerNode: subscribed to /face_recognition')
+        
+    def _setup_potholes_detection_subscription(self) -> None:
+        result_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=_QOS_DEPTH,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._frames['potholes detection'] = None
+        self.create_subscription(
+            PotholesDetectionResult,
+            '/pothole_detection',
+            self._on_potholes_result,
+            result_qos,
+        )
+        self._log.info('CameraViewerNode: subscribed to /pothole_detection')
 
     # ------------------------------------------------------------------
     # Subscription callback
@@ -116,6 +132,13 @@ class CameraViewerNode(Node):
             self._frames['face recognition'] = frame
         except Exception as exc:
             self._log.err(f'CameraViewerNode: face result error: {exc}')
+
+    def _on_potholes_result(self, msg: PotholesDetectionResult) -> None:
+        try:
+            frame = self._bridge.imgmsg_to_cv2(msg.annotated_frame, desired_encoding='bgr8')
+            self._frames['potholes detection'] = frame
+        except Exception as exc:
+            self._log.err(f'CameraViewerNode: potholes result error: {exc}')
 
     # ------------------------------------------------------------------
     # Display (called from the main loop)

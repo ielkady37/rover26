@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import os
 import cv2
+import torch
 import numpy as np
 from PIL import Image
+from ultralytics import YOLO
+from img2vec_pytorch import Img2Vec
 from utils.Configurator import Configurator
 from cv.helpers.CVUtilities import CVUtilities
 from sklearn.metrics.pairwise import cosine_similarity
@@ -51,9 +54,6 @@ class FaceRecognizer:
             When the target image is missing or any component fails to load.
         """
         try:
-            import torch
-            from ultralytics import YOLO
-            from img2vec_pytorch import Img2Vec
 
             root = Configurator.getProjectRoot()
             model_abs = self._resolve_path(self._model_path, root)

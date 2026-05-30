@@ -27,6 +27,7 @@ setup(
             'camera_streaming_node = cv.nodes.CameraStreamingNode:main',
             'camera_viewer_node = cv.nodes.CameraViewerNode:main',
             'face_recognition_node = cv.nodes.FaceRecognitionNode:main',
+            'pothole_detection_node = cv.nodes.PotholesDetectionNode:main',
         ],
     },
 )
