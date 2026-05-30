@@ -41,7 +41,7 @@ import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
 from nav_msgs.msg import Odometry
-from sensor_msgs.msg import Imu
+from sensor_msgs.msg import Imu, NavSatFix, NavSatStatus
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
 from interfaces.msg import EulerAngles, EncoderRevolutions, ActuatorCommand as ActuatorCommandMsg
@@ -79,6 +79,7 @@ class ESPBridgeNode(Node):
         self._odom_pub    = self.create_publisher(Odometry,           "/odom",     10)
         self._euler_pub   = self.create_publisher(EulerAngles,        "/euler",    10)
         self._encoder_pub = self.create_publisher(EncoderRevolutions, "/encoders", 10)
+        self._gps_pub     = self.create_publisher(NavSatFix,           "/gps",      10)
         self._tf_broadcaster = TransformBroadcaster(self)
 
         # odometry state
@@ -228,6 +229,7 @@ class ESPBridgeNode(Node):
         self._publish_odom(data, stamp)
         self._publish_euler(data, stamp)
         self._publish_encoders(data, stamp)
+        self._publish_gps(data, stamp)
 
     # /imu
 
@@ -261,6 +263,26 @@ class ESPBridgeNode(Node):
         msg.enc1_net_rev    = float(data.enc1_net_rev)
         msg.enc2_net_rev    = float(data.enc2_net_rev)
         self._encoder_pub.publish(msg)
+
+    # /gps
+
+    def _publish_gps(self, data: SensorData, stamp: Time) -> None:
+        msg = NavSatFix()
+        msg.header.stamp    = stamp
+        msg.header.frame_id = self.get_parameter("base_frame").value
+
+        status = NavSatStatus()
+        status.status  = NavSatStatus.STATUS_FIX if data.gps_fix >= 1.0 \
+                         else NavSatStatus.STATUS_NO_FIX
+        status.service = NavSatStatus.SERVICE_GPS
+        msg.status = status
+
+        msg.latitude  = float(data.gps_lat)
+        msg.longitude = float(data.gps_lon)
+        msg.altitude  = float(data.gps_alt)
+        msg.position_covariance_type = NavSatFix.COVARIANCE_TYPE_UNKNOWN
+
+        self._gps_pub.publish(msg)
 
     # /euler
 

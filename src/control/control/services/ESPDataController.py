@@ -6,20 +6,20 @@ ESPDataController — owns both ESP32 links in a single class.
 SENSOR ESP32  (SPI)  — Pi ← ESP32  read-only
 ────────────────────────────────────────────────────────────
 ESP32 → Pi communication sequence:
-1. Pi reads 203 bytes → ContractPacket  (start=0xAB)
-2. Pi reads  62 bytes → SensorPacket    (start=0xAA), repeated forever
+1. Pi reads 267 bytes → ContractPacket  (start=0xAB)
+2. Pi reads  82 bytes → SensorPacket    (start=0xAA), repeated forever
 
-ContractPacket layout (202 bytes, little-endian, #pragma pack(1)):
+ContractPacket layout (267 bytes, little-endian, #pragma pack(1)):
     [0]      uint8   start              0xAB
-    [1]      uint8   field_count        15
-    [2-3]    uint16  data_packet_size   bytes per sensor packet (62)
+    [1]      uint8   field_count        20
+    [2-3]    uint16  data_packet_size   bytes per sensor packet (82)
     [4-5]    uint16  ticks_per_rev      encoder ticks per full motor revolution
-    [6-200]  15 × ContractField:
+    [6-265]  20 × ContractField:
                  char[12]  name         null-padded ASCII
                  uint8     bit_width    32 = IEEE 754 float
-    [201]    uint8   checksum           XOR of bytes [0..200]
+    [266]    uint8   checksum           XOR of bytes [0..265]
 
-SensorPacket layout (62 bytes, little-endian, #pragma pack(1)):
+SensorPacket layout (82 bytes, little-endian, #pragma pack(1)):
     [0]      uint8   start              0xAA
     [1-4]    float   yaw                degrees
     [5-8]    float   pitch              degrees
@@ -36,7 +36,12 @@ SensorPacket layout (62 bytes, little-endian, #pragma pack(1)):
     [49-52]  float   az
     [53-56]  float   enc1NetRev         motor 1 net revolutions
     [57-60]  float   enc2NetRev         motor 2 net revolutions
-    [61]     uint8   checksum           XOR of bytes [0..60]
+    [61-64]  float   gps_lat            latitude  degrees (+N/-S)
+    [65-68]  float   gps_lon            longitude degrees (+E/-W)
+    [69-72]  float   gps_alt            altitude  metres
+    [73-76]  float   gps_fix            0.0=no fix  1.0=GPS fix
+    [77-80]  float   gps_sats           tracked satellites
+    [81]     uint8   checksum           XOR of bytes [0..80]
 
 ACTUATOR ESP32  (I2C)  — Pi → ESP32  write-only
 ────────────────────────────────────────────────────────────
@@ -77,16 +82,16 @@ from control.exceptions.SensorReadError import SensorReadError
 # Contract constants
 CONTRACT_START_BYTE      = 0xAB
 CONTRACT_FIELD_NAME_LEN  = 12
-CONTRACT_FIELD_COUNT     = 15
-CONTRACT_PACKET_SIZE     = 202 
+CONTRACT_FIELD_COUNT     = 20
+CONTRACT_PACKET_SIZE     = 267
 # Data-packet constants
 PACKET_START_BYTE = 0xAA
-PACKET_SIZE       = 62         
+PACKET_SIZE       = 82         
 
 # Struct formats (little-endian, packed)
 _CONTRACT_HEADER_FMT = "<BBHH"                       # start, field_count, data_packet_size, ticks_per_rev
 _CONTRACT_FIELD_FMT  = f"<{CONTRACT_FIELD_NAME_LEN}sB"  # name[12], bit_width
-_DATA_PACKET_FMT     = "<B15fB"                      # start, 15 floats, checksum
+_DATA_PACKET_FMT     = "<B20fB"                      # start, 20 floats, checksum
 
 # Actuator contract / packet constants
 _ACT_CONTRACT_START      = 0xBC
@@ -339,6 +344,7 @@ class ESPDataController:
             "gx", "gy", "gz",
             "ax", "ay", "az",
             "enc1_rev", "enc2_rev",
+            "gps_lat", "gps_lon", "gps_alt", "gps_fix", "gps_sats",
         ]
 
     def _parse_data_packet(self, raw: bytes) -> SensorData:
@@ -353,7 +359,8 @@ class ESPDataController:
                 f"got 0x{raw[0]:02X}"
             )
 
-        _, yaw, pitch, roll, qx, qy, qz, qw, gx, gy, gz, ax, ay, az, enc1, enc2, _ = \
+        _, yaw, pitch, roll, qx, qy, qz, qw, gx, gy, gz, ax, ay, az, enc1, enc2, \
+            gps_lat, gps_lon, gps_alt, gps_fix, gps_sats, _ = \
             struct.unpack(_DATA_PACKET_FMT, raw)
 
         return SensorData(
@@ -363,4 +370,9 @@ class ESPDataController:
             ax=ax, ay=ay, az=az,
             enc1_net_rev=enc1,
             enc2_net_rev=enc2,
+            gps_lat=gps_lat,
+            gps_lon=gps_lon,
+            gps_alt=gps_alt,
+            gps_fix=gps_fix,
+            gps_sats=gps_sats,
         )
