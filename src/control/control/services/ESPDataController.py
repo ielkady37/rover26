@@ -53,7 +53,7 @@ ContractPacket layout (109 bytes, little-endian, #pragma pack(1)):
                  uint8     bit_width    8=uint8 / 32=float
     [108]    uint8   checksum           XOR of bytes [0..107]
 
-ActuatorPacket layout (19 bytes, little-endian, #pragma pack(1)):
+ActuatorPacket layout (20 bytes, little-endian, #pragma pack(1)):
     [0]      uint8   start              0xBB
     [1]      uint8   m1_dir             0=forward  1=reverse
     [2]      uint8   m1_brake           0=off      1=on
@@ -62,8 +62,9 @@ ActuatorPacket layout (19 bytes, little-endian, #pragma pack(1)):
     [8]      uint8   m2_brake
     [9-12]   float   m2_speed
     [13]     uint8   laser              0=off  1=on
-    [14-17]  float   servo              degrees
-    [18]     uint8   checksum           XOR of bytes [0..17]
+    [14]     uint8   flash              0=off  1=on
+    [15-18]  float   servo              degrees
+    [19]     uint8   checksum           XOR of bytes [0..18]
 """
 import struct
 import time
@@ -91,8 +92,8 @@ _DATA_PACKET_FMT     = "<B15fB"                      # start, 15 floats, checksu
 _ACT_CONTRACT_START      = 0xBC
 _ACT_PACKET_START        = 0xBB
 _ACT_FIELD_NAME_LEN      = 12
-_ACT_CONTRACT_SIZE       = 109
-_ACT_PACKET_SIZE         = 19
+_ACT_CONTRACT_SIZE       = 122
+_ACT_PACKET_SIZE         = 20
 _ACT_CONTRACT_HEADER_FMT = "<BBH"                          # start, field_count, data_packet_size
 _ACT_FIELD_FMT           = f"<{_ACT_FIELD_NAME_LEN}sB"    # name[12], bit_width
 
@@ -104,6 +105,7 @@ _ACT_CONTRACT_FIELDS: list[tuple[str, int]] = [
     ("m2_brake", 8),
     ("m2_speed", 32),
     ("laser",    8),
+    ("flash",    8),
     ("servo",    32),
 ]
 
@@ -276,7 +278,7 @@ class ESPDataController:
     def write(self, cmd: ActuatorCommand) -> None:
         """Build and send one ActuatorPacket to the actuator ESP32."""
         body = struct.pack(
-            "<BBBfBBfBf",
+            "<BBBfBBfBBf",
             _ACT_PACKET_START,
             int(cmd.motor1.dir)   & 0xFF,
             int(cmd.motor1.brake) & 0xFF,
@@ -285,6 +287,7 @@ class ESPDataController:
             int(cmd.motor2.brake) & 0xFF,
             float(cmd.motor2.speed),
             int(cmd.laser)        & 0xFF,
+            int(cmd.flash)        & 0xFF,
             float(cmd.servo),
         )
         self.send(body)

@@ -117,6 +117,7 @@ class AutonomousNavigationNode(LifecycleNode):
             act_msg.m1_speed = cmd_dto.right_pwm
             act_msg.m1_dir = cmd_dto.right_dir
             act_msg.m1_brake = cmd_dto.right_brake
+            act_msg.flash = 1
 
             self.motor_pub.publish(act_msg)
 
@@ -137,6 +138,7 @@ class AutonomousNavigationNode(LifecycleNode):
             msg = ActuatorCommand()
             msg.m1_brake = 1
             msg.m2_brake = 1
+            msg.flash = 1
             self.motor_pub.publish(msg)
         except Exception as e:
             self._log.err(f"Failed to publish safe stop: {e}")

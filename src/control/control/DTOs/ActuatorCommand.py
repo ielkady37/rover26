@@ -14,4 +14,5 @@ class ActuatorCommand:
     motor1: MotorCommand = field(default_factory=lambda: MotorCommand(0, 0, 0.0))
     motor2: MotorCommand = field(default_factory=lambda: MotorCommand(0, 0, 0.0))
     laser: int = 0        # 0 = off, 1 = on
+    flash: int = 0        # 0 = off, 1 = on
     servo: float = 0.0    # degrees

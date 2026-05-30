@@ -23,6 +23,8 @@ class ManualNavigationNode(LifecycleNode):
         self.last_time = time.time()
         self.joystick = None
         self.deadzone = 0.0
+        self._flash_state = 0
+        self._last_flash_toggle = 0.0
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring ManualNavigationNode...")
@@ -112,6 +114,10 @@ class ManualNavigationNode(LifecycleNode):
             dt = current_time - self.last_time
             self.last_time = current_time
 
+            if current_time - self._last_flash_toggle >= 0.5:
+                self._flash_state ^= 1
+                self._last_flash_toggle = current_time
+
             axes = self.joystick.getAxis()
             
             r2 = axes.get("r2_axis", 0.0)  # Gas
@@ -147,6 +153,7 @@ class ManualNavigationNode(LifecycleNode):
             msg.m2_speed = float(cmd_dto.left_pwm)
             msg.m2_dir = int(cmd_dto.left_dir)
             msg.m2_brake = int(cmd_dto.left_brake)
+            msg.flash = self._flash_state
 
             self.motor_pub.publish(msg)
 

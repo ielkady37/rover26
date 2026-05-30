@@ -186,6 +186,7 @@ class ESPBridgeNode(Node):
                 speed=float(msg.m2_speed),
             ),
             laser=int(msg.laser),
+            flash=int(msg.flash),
             servo=float(msg.servo),
         )
         if not self._actuator_ready:

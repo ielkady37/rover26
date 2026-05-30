@@ -13,5 +13,8 @@ float32 m2_speed  # 0.0–1.0 duty cycle
 # Laser
 uint8 laser       # 0=off  1=on
 
+# Flash
+uint8 flash       # 0=off  1=on
+
 # Servo
 float32 servo     # degrees
