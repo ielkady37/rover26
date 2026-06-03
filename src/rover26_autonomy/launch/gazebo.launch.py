@@ -378,6 +378,15 @@ def generate_launch_description():
                     parameters=[nav2_params, {'use_sim_time': True}],
                 ),
                 Node(
+                    package='nav2_velocity_smoother',
+                    executable='velocity_smoother',
+                    name='velocity_smoother',
+                    output='screen',
+                    parameters=[nav2_params, {'use_sim_time': True}],
+                    remappings=[('cmd_vel', 'cmd_vel_smoothed'),
+                                ('cmd_vel_smoothed', 'cmd_vel_nav')],
+                ),
+                Node(
                     package='nav2_planner',
                     executable='planner_server',
                     name='planner_server',
@@ -415,6 +424,7 @@ def generate_launch_description():
                         'autostart': True,
                         'node_names': [
                             'controller_server',
+                            'velocity_smoother',
                             'planner_server',
                             'behavior_server',
                             'bt_navigator',

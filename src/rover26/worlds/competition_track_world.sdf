@@ -289,14 +289,14 @@
       </link>
     </model>
 
-    <model name="pothole_2"><static>true</static><pose>0 -4.0 0.006 0 0 0</pose>
+    <!-- <model name="pothole_2"><static>true</static><pose>0 -5.0 0.006 0 0 0</pose>
       <link name="link">
         <visual name="v">
           <geometry><cylinder><radius>0.30</radius><length>0.01</length></cylinder></geometry>
           <material><ambient>1 1 1 1</ambient><diffuse>1 1 1 1</diffuse></material>
         </visual>
       </link>
-    </model>
+    </model> -->
 
     <!-- Red obstacle -->
     <model name="red_obs_1">

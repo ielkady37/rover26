@@ -159,6 +159,10 @@ class PotholePublisherNode(Node):
     any stale obstacle marks.
     """
 
+    # Minimum distance (metres) a new detection must be from ALL known potholes
+    # before it is treated as a new, distinct pothole rather than a re-detection.
+    _DEDUP_DIST_M: float = 1.0
+
     def __init__(self):
         super().__init__('pothole_publisher_node')
 
@@ -173,11 +177,17 @@ class PotholePublisherNode(Node):
             PointCloud2, RosTopics.POTHOLE_OBSTACLES, 10
         )
 
+        # Stores (x_fwd, y_lat) of every pothole already published to the costmap.
+        # A new detection is only forwarded if it is > _DEDUP_DIST_M away from
+        # every entry in this list.
+        self._known_potholes: list = []
+
         self.get_logger().info(
             'pothole_publisher_node ready\n'
             f'  input  : {RosTopics.POTHOLE_DETECTIONS}  [Float32MultiArray]\n'
             f'  output : {RosTopics.POTHOLE_OBSTACLES}   [PointCloud2]\n'
-            f'  costmap gate : ≤ {PotholeDetection.COSTMAP_PUBLISH_M} m'
+            f'  costmap gate : ≤ {PotholeDetection.COSTMAP_PUBLISH_M} m\n'
+            f'  dedup radius : {PotholePublisherNode._DEDUP_DIST_M} m'
         )
 
     # =========================================================================
@@ -210,6 +220,20 @@ class PotholePublisherNode(Node):
         for x_fwd, y_lat, radius_m in triplets:
             if not (PotholeDetection.MIN_DETECTION_M < x_fwd <= PotholeDetection.COSTMAP_PUBLISH_M):
                 continue
+
+            # Deduplicate — skip if this detection is close to an already-known pothole.
+            too_close = any(
+                math.hypot(x_fwd - kx, y_lat - ky) < self._DEDUP_DIST_M
+                for kx, ky in self._known_potholes
+            )
+            if too_close:
+                continue
+
+            self._known_potholes.append((x_fwd, y_lat))
+            self.get_logger().info(
+                f'[pothole] NEW pothole registered at fwd={x_fwd:.2f}m  lat={y_lat:.2f}m  r={radius_m:.2f}m  '
+                f'(total known: {len(self._known_potholes)})'
+            )
             disk_points.extend(_pothole_disk(x_fwd, y_lat, radius_m))
 
         stamp = self.get_clock().now().to_msg()

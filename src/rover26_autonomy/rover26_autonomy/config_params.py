@@ -137,7 +137,7 @@ class PotholeDetection:
 
     RADIUS_SCALE:  float = 1.0   # tune until logged r matches real pothole size
     MIN_RADIUS_M:  float = 0.10  # raise if close potholes look too small in costmap
-    MAX_RADIUS_M:  float = 0.60  # realistic pothole max
+    MAX_RADIUS_M:  float = 0.20  # realistic pothole max
 
 
 
@@ -188,21 +188,21 @@ class LaneGoalPublisher:
 
     # ── Curvature thresholds ───────────────────────────────────────────────────
     CURVE_THRESHOLD: float = 0.0014   # Gentle-curve regime starts here (pixels⁻¹)
-    SHARP_THRESHOLD: float = 0.0060   # Sharp / 90° turn regime starts here (pixels⁻¹)
+    SHARP_THRESHOLD: float = 0.0040   # Sharp / 90° turn regime starts here (pixels⁻¹)
 
     # ── Look-ahead pixel row fraction of IMG_H ─────────────────────────────────
     # Smaller fraction → higher row in BEV image → further ahead on the ground.
     # PY_FAR  = 0.52 → x_fwd ≈ 4.4 m   (straight: stable, far)
     # PY_NEAR = 0.85 → x_fwd ≈ 1.8 m   (curves: goal stays ON the arc, not the chord)
     # PY_SHARP= 0.85 → x_fwd ≈ 1.4 m   (sharp: very close stepping stones)
-    PY_FAR:   float = 0.52   # Look-ahead fraction for straight segments
-    PY_NEAR:  float = 0.85   # Look-ahead fraction for gentle curves
-    PY_SHARP: float = 0.85   # Look-ahead fraction for sharp turns
+    PY_FAR:   float = 0.2   # Look-ahead fraction for straight segments
+    PY_NEAR:  float = 0.72   # Look-ahead fraction for gentle curves — raised from 0.55, goal stays on arc not chord
+    PY_SHARP: float = 0.75   # Look-ahead fraction for sharp turns
 
     # ── Sharp-turn goal projection ─────────────────────────────────────────────
     # Fixed forward distance for each stepping stone in sharp-turn mode.
     # Short enough to update rapidly through the turn; long enough for Nav2 to track.
-    GOAL_DIST_SHARP_M: float = 0.50   # Metres
+    GOAL_DIST_SHARP_M: float = 0.3   # Metres
 
     # ── Outer bias (gentle curves only — fades to zero in sharp turns) ─────────
     # Pushes the goal toward the OUTSIDE of the curve to widen the arc.
@@ -212,20 +212,20 @@ class LaneGoalPublisher:
     # TUNING:
     #   Rover still cuts corners → increase OUTER_BIAS_MAX_M toward 1.0
     #   Rover clips the outer wall → decrease toward 0.3
-    OUTER_BIAS_MAX_M:  float = 0.45   # Maximum lateral push (metres)
-    BIAS_BLEND_POWER:  float = 1.30   # Exponent on blend factor; >1 delays bias onset
-    FWD_FACTOR_DIV:    float = 1.50   # x_fwd divisor; saturates bias at short lookaheads
+    OUTER_BIAS_MAX_M:  float = 0.48   # Maximum lateral push (metres) — raised from 0.20 to stop corner cutting
+    BIAS_BLEND_POWER:  float = 1.20   # Exponent on blend factor; lowered from 1.80 so bias kicks in earlier
+    FWD_FACTOR_DIV:    float = 2.0   # x_fwd divisor; saturates bias at short lookaheads
 
     # ── Lateral position IIR smoothers ────────────────────────────────────────
     # Lower alpha = faster response to new lane position.
-    ALPHA_STRAIGHT: float = 0.70   # Heavy smoothing on straight segments
+    ALPHA_STRAIGHT: float = 0.50   # Heavy smoothing on straight segments
     ALPHA_CURVE:    float = 0.22   # Quicker reaction on gentle curves
 
     # ── Sharp-turn heading IIR smoother ───────────────────────────────────────
     # IIR keep-old weight on the lane-tangent yaw in sharp mode.
     #   0.40 → 60% weight on new heading (responsive, may overshoot apex)
     #   0.65 → 35% weight on new heading (stable, slight lag into curve)
-    ALPHA_SHARP_YAW: float = 0.65
+    ALPHA_SHARP_YAW: float = 0.45
 
     # ── Goal update throttle (minimum displacement between consecutive goals) ──
     # Prevents flooding Nav2 with nearly identical goals.
@@ -235,14 +235,14 @@ class LaneGoalPublisher:
     #
     # Was 1.40m — one plan every ~2s on straight. At 2.5m, one plan every ~5s.
     # Smoother planner output means you can afford longer spacing on straights.
-    UPDATE_M_STRAIGHT: float = 2.50   # One planning call every ~5s at 0.5 m/s
+    UPDATE_M_STRAIGHT: float = 0.50   # One planning call every ~5s at 0.5 m/s
 
     # Was 0.20m — very frequent on curves. At 0.40m still tracks curves well
     # while halving the number of planning calls per curve segment.
     UPDATE_M_CURVE:    float = 0.40   # Denser on curves but not excessive
 
     # Keep sharp turns dense — stepping-stone geometry requires it.
-    UPDATE_M_SHARP:    float = 0.15   # Very dense during 90° turns (keep as-is)
+    UPDATE_M_SHARP:    float = 0.10   # Very dense during 90° turns (keep as-is)
 
     # ── Goal proximity tolerances ──────────────────────────────────────────────
     # A goal is declared REACHED when BOTH conditions are met.
@@ -252,6 +252,10 @@ class LaneGoalPublisher:
     # checks XY distance. A yaw check caused circles because the rover heading
     # at intermediate waypoints is always 20-40° off from the goal yaw.
     XY_GOAL_TOL: float = 0.65   # metres — only tolerance used
+
+    # ── Lane-loss handling ─────────────────────────────────────────────────────
+    MAX_CONSECUTIVE_FAILURES: int   = 3      # failures before giving up and clearing anchor
+    OBSTACLE_SKIP_M:          float = 0.40   # metres to skip forward per failure attempt
 
     # ── Lane-loss / rotation recovery ─────────────────────────────────────────
     LANE_SILENCE_THRESH_S:    float = 0.30           # Topic considered silent after this gap (s)
