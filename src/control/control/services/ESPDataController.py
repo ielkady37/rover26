@@ -62,10 +62,10 @@ ActuatorPacket layout (20 bytes, little-endian, #pragma pack(1)):
     [0]      uint8   start              0xBB
     [1]      uint8   m1_dir             0=forward  1=reverse
     [2]      uint8   m1_brake           0=off      1=on
-    [3-6]    float   m1_speed           0.0–1.0
+    [3-6]    float   m1_speed           0–255 PWM
     [7]      uint8   m2_dir
     [8]      uint8   m2_brake
-    [9-12]   float   m2_speed
+    [9-12]   float   m2_speed           0–255 PWM
     [13]     uint8   laser              0=off  1=on
     [14]     uint8   flash              0=off  1=on
     [15-18]  float   servo              degrees

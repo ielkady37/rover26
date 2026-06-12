@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 class MotorCommand:
     dir: int    # 0 = forward, 1 = reverse
     brake: int  # 0 = off,     1 = on
-    speed: float  # 0.0 – 1.0 duty cycle
+    speed: float  # 0 – 255 PWM value
 
 
 @dataclass

@@ -62,9 +62,9 @@ class ESPBridgeNode(Node):
         super().__init__("esp_bridge_node")
 
         # declare parameters 
-        self.declare_parameter("sensor_port",      "/dev/ttyUSB1")
+        self.declare_parameter("sensor_port",      "/dev/ttyUSB0")
         self.declare_parameter("sensor_baudrate",  115200)
-        self.declare_parameter("actuator_port",    "/dev/ttyUSB0")
+        self.declare_parameter("actuator_port",    "/dev/ttyUSB1")
         self.declare_parameter("actuator_baudrate", 115200)
         self.declare_parameter("uart_timeout",     0.2)
         self.declare_parameter("wheel_radius", 0.05)
@@ -104,6 +104,10 @@ class ESPBridgeNode(Node):
         }
         self._sensor_ctrl = ESPDataController(UARTService(uart_sensor_comm))
         self._actuator_ctrl = ESPDataController(UARTService(uart_actuator_comm))
+        self._sensor_ready = False
+        self._actuator_ready = False
+
+        # sensor init (non-fatal — node continues without sensor data on failure)
         try:
             self._sensor_ctrl.initialize_with_retry(
                 on_retry=lambda attempt, total, exc: self.get_logger().warn(
@@ -114,6 +118,21 @@ class ESPBridgeNode(Node):
                 ),
             )
             self._sensor_ctrl.read_contract()
+            self._sensor_ready = True
+            self.get_logger().info(
+                f"Sensor ESP32 ready — "
+                f"fields={self._sensor_ctrl.fields}, "
+                f"ticks_per_rev={self._sensor_ctrl.ticks_per_rev}, "
+                f"packet_size={self._sensor_ctrl._packet_size} bytes"
+            )
+        except SensorInitializationError as e:
+            self.get_logger().error(
+                f"Sensor ESP32 unavailable — UART init failed: {e}. "
+                f"Node will run without sensor data."
+            )
+
+        # actuator init (non-fatal — node continues without actuator on failure)
+        try:
             self._actuator_ctrl.initialize_with_retry(
                 on_retry=lambda attempt, total, exc: self.get_logger().warn(
                     f"UART actuator init attempt {attempt}/{total} failed: {exc} — retrying..."
@@ -122,32 +141,16 @@ class ESPBridgeNode(Node):
                     f"UART actuator initialized on attempt {attempt}/{total}"
                 ),
             )
-            try:
-                self._actuator_ctrl.send_contract(
-                    on_retry=lambda attempt, total, exc: self.get_logger().warn(
-                        f"UART actuator contract send attempt {attempt}/{total} failed: {exc} — retrying..."
-                    ),
-                    on_success=lambda attempt, total: self.get_logger().info(
-                        f"UART actuator contract sent on attempt {attempt}/{total}"
-                    ),
-                )
-                self._actuator_ready = True
-                self.get_logger().info(
-                    f"ESP32 contracts exchanged — "
-                    f"sensor fields={self._sensor_ctrl.fields}, "
-                    f"ticks_per_rev={self._sensor_ctrl.ticks_per_rev}, "
-                    f"packet_size={self._sensor_ctrl._packet_size} bytes | "
-                    f"actuator UART {uart_actuator_comm['port']} ready"
-                )
-            except SensorInitializationError as e:
-                self._actuator_ready = False
-                self.get_logger().error(
-                    f"Actuator ESP32 unavailable — UART contract failed: {e}. "
-                    f"Node will run in sensor-only mode."
-                )
+            self._actuator_ready = True
+            self.get_logger().info(
+                f"Actuator ESP32 ready — UART {uart_actuator_comm['port']} ready"
+            )
         except SensorInitializationError as e:
-            self.get_logger().fatal(f"Failed to initialise UART ESP32 links: {e}")
-            raise
+            self._actuator_ready = False
+            self.get_logger().error(
+                f"Actuator ESP32 unavailable — UART init/contract failed: {e}. "
+                f"Node will run in sensor-only mode."
+            )
 
         # /esp_tx subscriber
         self._esp_tx_sub = self.create_subscription(
@@ -207,6 +210,8 @@ class ESPBridgeNode(Node):
     # background UART reader
 
     def _reader_loop(self) -> None:
+        if not self._sensor_ready:
+            return
         while self._running:
             try:
                 data = self._sensor_ctrl.receive()
