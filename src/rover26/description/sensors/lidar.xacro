@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LIDAR JOINT
+       90° CCW rotation applied to joint origin (new_x=-old_y, new_y=old_x):
+         Old xyz: -0.0014001  -0.27365   0.04  (lidar was in front along old -Y)
+         New xyz:  0.27365   -0.0014001  0.04  (lidar now in front along new +X) ✓
+
+       rpy stays "0 0 0": the lidar is 360° so yaw offset doesn't affect scan
+       coverage. If your scan needs a specific yaw reference, add 1.5708 here.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <!-- old xyz="-0.0014001 -0.27365 0.04"
+         new xyz=" 0.27365  -0.0014001 0.04" -->
+    <origin xyz="0.27365 -0.0014001 0.04" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LIDAR LINK — geometry unchanged (local frame)
+       inertial CoM is essentially (0, 0, -0.024): no meaningful rotation.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <link name="lidar_link">
+    <inertial>
+      <origin xyz="7.14081571651093E-14 4.89608353859694E-14 -0.0235714285721134" rpy="0 0 0"/>
+      <mass value="0.263893782901543"/>
+      <!-- ixx=iyy (cylindrical lidar body) — no swap needed for rotation -->
+      <inertia ixx="0.000200209211823772" ixy="-7.88860905221012E-31" ixz="-5.28995346614825E-18"
+               iyy="0.000200209211823772" iyz="2.04396983609088E-17"  izz="0.000324212361850467"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="file://$(find rover26)/meshes/lidar.STL"/></geometry>
+      <material name="blue_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="file://$(find rover26)/meshes/lidar.STL"/></geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GAZEBO SENSOR PLUGIN — unchanged (360° scan, all params still valid)
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>20</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.3</min>
+          <max>25.0</max>
+          <resolution>0.01</resolution>
+        </range>
+      </lidar>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+</robot>

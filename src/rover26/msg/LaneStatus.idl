@@ -1,0 +1,33 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from rover26/msg/LaneStatus.msg
+// generated code does not contain a copyright notice
+
+
+module rover26 {
+  module msg {
+    typedef float float__3[3];
+    struct LaneStatus {
+      float steering_angle;
+
+      float steering_magnitude;
+
+      int8 direction;
+
+      boolean left_detected;
+
+      boolean right_detected;
+
+      uint8 confidence;
+
+      float imu_yaw_rate;
+
+      float imu_accel_x;
+
+      @verbatim (language="comment", text=
+        "Lane polynomial coefficients [a, b, c] for x = a*y^2 + b*y + c")
+      float__3 left_coeffs;
+
+      float__3 right_coeffs;
+    };
+  };
+};

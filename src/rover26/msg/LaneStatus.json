@@ -1,0 +1,116 @@
+{
+  "type_description_msg": {
+    "type_description": {
+      "type_name": "rover26/msg/LaneStatus",
+      "fields": [
+        {
+          "name": "steering_angle",
+          "type": {
+            "type_id": 10,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "steering_magnitude",
+          "type": {
+            "type_id": 10,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "direction",
+          "type": {
+            "type_id": 2,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "left_detected",
+          "type": {
+            "type_id": 15,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "right_detected",
+          "type": {
+            "type_id": 15,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "confidence",
+          "type": {
+            "type_id": 3,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "imu_yaw_rate",
+          "type": {
+            "type_id": 10,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "imu_accel_x",
+          "type": {
+            "type_id": 10,
+            "capacity": 0,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "left_coeffs",
+          "type": {
+            "type_id": 58,
+            "capacity": 3,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        },
+        {
+          "name": "right_coeffs",
+          "type": {
+            "type_id": 58,
+            "capacity": 3,
+            "string_capacity": 0,
+            "nested_type_name": ""
+          },
+          "default_value": ""
+        }
+      ]
+    },
+    "referenced_type_descriptions": []
+  },
+  "type_hashes": [
+    {
+      "type_name": "rover26/msg/LaneStatus",
+      "hash_string": "RIHS01_a27d67f3f09349b61e235a956784649bb6b49bc29d2f3661f9e613b8d677d704"
+    }
+  ]
+}

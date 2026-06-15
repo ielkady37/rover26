@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="rover26" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:include filename="$(find rover26)/description/materials.xacro"/>
+  <xacro:include filename="$(find rover26)/description/properties.xacro"/>
+  <xacro:include filename="$(find rover26)/description/macros.xacro"/>
+  <xacro:include filename="$(find rover26)/description/gazebo.xacro"/>
+  <xacro:include filename="$(find rover26)/description/sensors/lidar.xacro"/>
+  <xacro:include filename="$(find rover26)/description/sensors/camera.xacro"/>
+  <xacro:include filename="$(find rover26)/description/sensors/gps.xacro"/>
+  <xacro:include filename="$(find rover26)/description/sensors/imu.xacro"/>
+
+  <xacro:property name="mesh_uri" value="file://$(find rover26)/meshes"/>
+
+  <link name="base_footprint"/>
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.3" rpy="0 0 0"/>
+  </joint>
+  <link name="base_link">
+    <inertial>
+      <origin xyz="-0.000849824400305454 -1.59425613237563E-05 -0.0873247070296878" rpy="0 0 0"/>
+      <mass value="9.16613701618905"/>
+      <inertia ixx="0.0197586427934138"  ixy="7.857146708736E-10"    ixz="-2.35664909590239E-08"
+               iyy="0.10877704590114"    iyz="-2.16891277878343E-09"  izz="0.121512278202279"/>
+    </inertial>
+
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 1.5708"/>
+      <geometry><mesh filename="${mesh_uri}/base_link.STL"/></geometry>
+      <material name="grey"/>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 1.5708"/>
+      <geometry><mesh filename="${mesh_uri}/base_link.STL"/></geometry>
+    </collision>
+  </link>
+
+  <link name="rightwheel_link">
+    <inertial>
+      <origin xyz="-3.92438859186939E-12 6.11156379336231E-06 0.0325776553627823" rpy="0 0 0"/>
+      <mass value="3.08150027072289"/>
+      <inertia ixx="0.00574592439542028" ixy="2.28880708563721E-14"  ixz="6.70727240760862E-13"
+               iyy="0.00574601871607623" iyz="-1.06447319492491E-06" izz="0.00983903535739353"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh_uri}/rightwheel.STL"/></geometry>
+      <material name="light_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh_uri}/rightwheel.STL"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="rightwheel_joint" type="continuous">
+    <origin xyz="0 -0.3486 -0.17187" rpy="-1.5708 0 0"/>
+    <parent link="base_link"/>
+    <child link="rightwheel_link"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.5" friction="0.2"/>
+  </joint>
+
+  <link name="leftwheel_link">
+    <inertial>
+      <origin xyz="3.92347265787407E-12 6.11156379340394E-06 -0.032577655362791" rpy="0 0 0"/>
+      <mass value="3.08150027072291"/>
+      <inertia ixx="0.00574592439542029" ixy="-2.28873679725902E-14" ixz="6.7085818531115E-13"
+               iyy="0.00574601871607624" iyz="1.06447319493103E-06"  izz="0.00983903535739355"/>
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh_uri}/leftwheel.STL"/></geometry>
+      <material name="light_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><mesh filename="${mesh_uri}/leftwheel.STL"/></geometry>
+    </collision>
+  </link>
+
+  <joint name="leftwheel_joint" type="continuous">
+    <origin xyz="0 0.3486 -0.17187" rpy="-1.5708 0 0"/>
+    <parent link="base_link"/>
+    <child link="leftwheel_link"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.5" friction="0.2"/>
+  </joint>
+
+  <xacro:castor_assembly prefix="FL" x="0.25"  y="0.185"  swivel_axis="1"  wheel_axis="-1"
+    castor_inertia_xyz="0.015 4.5E-05 -0.0668"   castor_mass="0.411166945379891"/>
+
+  <xacro:castor_assembly prefix="BL" x="-0.25" y="0.185"  swivel_axis="-1" wheel_axis="-1"
+    castor_inertia_xyz="-0.015 4.5E-05 -0.0668"  castor_mass="0.411166945377423"/>
+
+  <xacro:castor_assembly prefix="FR" x="0.25"  y="-0.185" swivel_axis="-1" wheel_axis="1"
+    castor_inertia_xyz="0.015 -4.5E-05 -0.0668"  castor_mass="0.411166945379892"/>
+
+  <xacro:castor_assembly prefix="BR" x="-0.25" y="-0.185" swivel_axis="1"  wheel_axis="1"
+    castor_inertia_xyz="-0.015 -4.5E-05 -0.0668" castor_mass="0.411166945377423"/>
+
+</robot>

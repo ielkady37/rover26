@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GPS JOINT
+       Old xyz: "0 0 0.05"
+       Rotation applied: new_x = -old_y = 0,  new_y = old_x = 0
+       Result: "0 0 0.05" — no change (GPS is centered on the robot).
+       rpy stays "0 0 0" (GPS is orientation-agnostic).
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <joint name="gps_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="gps_link"/>
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GPS LINK — unchanged
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <link name="gps_link">
+    <inertial>
+      <mass value="0.05"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0"
+               iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.05 0.05 0.02"/>
+      </geometry>
+      <material name="blue_grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.05 0.05 0.02"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GAZEBO SENSOR PLUGIN — unchanged
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="gps_link">
+    <sensor name="gps" type="navsat">
+      <topic>/gps/location</topic>
+      <update_rate>1</update_rate>
+      <always_on>1</always_on>
+      <navsat>
+        <position_sensing>
+          <horizontal>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+            </noise>
+          </horizontal>
+          <vertical>
+            <noise type="gaussian">
+              <mean>0.0</mean>
+              <stddev>0.001</stddev>
+            </noise>
+          </vertical>
+        </position_sensing>
+      </navsat>
+    </sensor>
+  </gazebo>
+
+</robot>

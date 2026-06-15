@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       IMU JOINT
+       Old xyz: "0 0 0"
+       Rotation applied: new_x = -old_y = 0,  new_y = old_x = 0
+       Result: "0 0 0" — no change (IMU is at the robot center of origin).
+       rpy stays "0 0 0" — the IMU axes align with the robot body frame,
+       which is already correctly oriented via the explicit element rotations
+       in rover26_urdf.xacro.
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       IMU LINK — unchanged
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.01"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0"
+               iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+      <material name="blue_grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GAZEBO SENSOR PLUGIN — unchanged
+  ════════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>/imu</topic>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+</robot>

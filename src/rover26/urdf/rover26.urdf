@@ -1,0 +1,854 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="rover26">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-1.59425613237563E-05 0.000849824400305454 -0.0873247070296878"
+        rpy="0 0 0" />
+      <mass
+        value="9.16613701618905" />
+      <inertia
+        ixx="0.10877704590114"
+        ixy="-7.857146708736E-10"
+        ixz="-2.35664909590239E-08"
+        iyy="0.0197586427934138"
+        iyz="-2.16891277878343E-09"
+        izz="0.121512278202279" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link/>
+
+
+  <link name="base_footprint"></link>
+
+  <joint
+    name="base_footprint_joint"
+    type="fixed">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="base_footprint" />
+  </joint>
+
+  <link
+    name="rightwheel">
+    <inertial>
+      <origin
+        xyz="-3.92438859186939E-12 6.11156379336231E-06 0.0325776553627823"
+        rpy="0 0 0" />
+      <mass
+        value="3.08150027072289" />
+      <inertia
+        ixx="0.00574592439542028"
+        ixy="2.28880708563721E-14"
+        ixz="6.70727240760862E-13"
+        iyy="0.00574601871607623"
+        iyz="-1.06447319492491E-06"
+        izz="0.00983903535739353" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/rightwheel.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/rightwheel.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rightwheel_joint"
+    type="revolute">
+    <origin
+      xyz="-0.3486 0 -0.17187"
+      rpy="-1.5708 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="rightwheel" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-1E+16"
+      upper="1E+16"
+      effort="30"
+      velocity="12" />
+    <dynamics
+      damping="0.5"
+      friction="0.2" />
+    <safety_controller
+      k_position="0"
+      k_velocity="1" />
+  </joint>
+  <link
+    name="leftwheel">
+    <inertial>
+      <origin
+        xyz="3.92347265787407E-12 6.11156379340394E-06 -0.032577655362791"
+        rpy="0 0 0" />
+      <mass
+        value="3.08150027072291" />
+      <inertia
+        ixx="0.00574592439542029"
+        ixy="-2.28873679725902E-14"
+        ixz="6.7085818531115E-13"
+        iyy="0.00574601871607624"
+        iyz="1.06447319493103E-06"
+        izz="0.00983903535739355" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/leftwheel.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/leftwheel.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="leftwheel_joint"
+    type="revolute">
+    <origin
+      xyz="0.3486 0 -0.17187"
+      rpy="-1.5708 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="leftwheel" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1E+16"
+      upper="1E+16"
+      effort="30"
+      velocity="12" />
+    <dynamics
+      damping="0.5"
+      friction="0.2" />
+    <safety_controller
+      k_position="0"
+      k_velocity="1" />
+  </joint>
+  <link
+    name="lidar">
+    <inertial>
+      <origin
+        xyz="7.14081571651093E-14 4.89608353859694E-14 -0.0235714285721134"
+        rpy="0 0 0" />
+      <mass
+        value="0.263893782901543" />
+      <inertia
+        ixx="0.000200209211823772"
+        ixy="-7.88860905221012E-31"
+        ixz="-5.28995346614825E-18"
+        iyy="0.000200209211823772"
+        iyz="2.04396983609088E-17"
+        izz="0.000324212361850467" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/lidar.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/lidar.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="lidar_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0014001 -0.27365 0.04"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="lidar" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="camera">
+    <inertial>
+      <origin
+        xyz="1.11022302462516E-16 -6.93889390390723E-18 -0.0237945045054865"
+        rpy="0 0 0" />
+      <mass
+        value="0.159621127501619" />
+      <inertia
+        ixx="4.69332801203968E-05"
+        ixy="2.61761694080102E-21"
+        ixz="-5.75604036267865E-21"
+        iyy="0.000140683280120397"
+        iyz="-4.47174067978566E-22"
+        izz="0.000157723235148685" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/camera.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/camera.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.00040887 -0.42 -0.049"
+      rpy="-1.5708 0 -3.1416" />
+    <parent
+      link="base_link" />
+    <child
+      link="camera" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="castorFL">
+    <inertial>
+      <origin
+        xyz="0.0149992961234578 4.50692742799408E-05 -0.0668217148194085"
+        rpy="0 0 0" />
+      <mass
+        value="0.411166945379891" />
+      <inertia
+        ixx="0.000416841288535765"
+        ixy="9.39549359322882E-18"
+        ixz="-2.84111215695273E-15"
+        iyy="0.000711554310816727"
+        iyz="-1.70042868639805E-13"
+        izz="0.000413607412951169" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorFL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorFL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="castorFL_joint"
+    type="revolute">
+    <origin
+      xyz="0.185 -0.25 -0.124"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="castorFL" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.5708"
+      upper="1.5708"
+      effort="2"
+      velocity="10" />
+    <dynamics
+      damping="0.3"
+      friction="0.2" />
+  </joint>
+  <link
+    name="wheelFL">
+    <inertial>
+      <origin
+        xyz="-6.93889390390723E-18 2.77555756156289E-17 6.88338275267597E-15"
+        rpy="0 0 0" />
+      <mass
+        value="0.374612932792007" />
+      <inertia
+        ixx="0.000379650011198176"
+        ixy="5.25483768295699E-21"
+        ixz="-1.80982692887886E-19"
+        iyy="0.000379650011198176"
+        iyz="5.12339781807871E-17"
+        izz="0.000685202275649917" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelFL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelFL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="wheelFL_joint"
+    type="revolute">
+    <origin
+      xyz="0.014999 0 -0.070418"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="castorFL" />
+    <child
+      link="wheelFL" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+    <dynamics
+      damping="0.2"
+      friction="0.1" />
+  </joint>
+  <link
+    name="castorBL">
+    <inertial>
+      <origin
+        xyz="-0.0149999998448641 4.50693103033473E-05 -0.0668217148192123"
+        rpy="0 0 0" />
+      <mass
+        value="0.411166945377423" />
+      <inertia
+        ixx="0.00041684128853442"
+        ixy="4.01968078215353E-14"
+        ixz="-2.82433329164078E-15"
+        iyy="0.000711554310816637"
+        iyz="-1.69167444608388E-13"
+        izz="0.000413607412951036" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorBL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorBL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="castorBL_joint"
+    type="revolute">
+    <origin
+      xyz="0.185 0.25 -0.124"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="castorBL" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <link
+    name="wheelBL">
+    <inertial>
+      <origin
+        xyz="1.24084076347231E-10 -1.80119807957624E-13 2.88975510187583E-11"
+        rpy="0 0 0" />
+      <mass
+        value="0.374612932792007" />
+      <inertia
+        ixx="0.000379650011198177"
+        ixy="1.16908847822713E-21"
+        ixz="4.16752478273265E-14"
+        iyy="0.000379650011198177"
+        iyz="5.12029823657388E-17"
+        izz="0.000685202275649917" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelBL.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelBL.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="wheelBL_joint"
+    type="revolute">
+    <origin
+      xyz="-0.015 0 -0.070418"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="castorBL" />
+    <child
+      link="wheelBL" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <link
+    name="castorFR">
+    <inertial>
+      <origin
+        xyz="0.0149992961233931 -4.50692743245718E-05 -0.0668217148190915"
+        rpy="0 0 0" />
+      <mass
+        value="0.411166945379892" />
+      <inertia
+        ixx="0.000416841288535767"
+        ixy="8.96504630824007E-17"
+        ixz="2.8415321213982E-15"
+        iyy="0.00071155431081673"
+        iyz="1.69993560557162E-13"
+        izz="0.00041360741295117" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorFR.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorFR.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="castorFR_joint"
+    type="revolute">
+    <origin
+      xyz="-0.185 -0.25 -0.124"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="castorFR" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <link
+    name="wheelFR">
+    <inertial>
+      <origin
+        xyz="0 1.38777878078145E-17 -1.33226762955019E-15"
+        rpy="0 0 0" />
+      <mass
+        value="0.374612932792008" />
+      <inertia
+        ixx="0.000379650011198177"
+        ixy="4.11667452828027E-22"
+        ixz="-1.0154887308355E-17"
+        iyy="0.000379650011198177"
+        iyz="-2.83624276164098E-20"
+        izz="0.000685202275649919" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelFR.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelFR.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="wheelFR_joint"
+    type="revolute">
+    <origin
+      xyz="0.014999 0 -0.070418"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="castorFR" />
+    <child
+      link="wheelFR" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <link
+    name="castorBR">
+    <inertial>
+      <origin
+        xyz="-0.0149999998953049 -4.50692381120943E-05 -0.0668217148191511"
+        rpy="0 0 0" />
+      <mass
+        value="0.411166945377423" />
+      <inertia
+        ixx="0.000416841288534421"
+        ixy="4.01872797107163E-14"
+        ixz="2.81872941891921E-15"
+        iyy="0.000711554310816638"
+        iyz="1.69019270087445E-13"
+        izz="0.000413607412951036" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorBR.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/castorBR.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="castorBR_joint"
+    type="revolute">
+    <origin
+      xyz="-0.185 0.25 -0.124"
+      rpy="0 0 -1.5708" />
+    <parent
+      link="base_link" />
+    <child
+      link="castorBR" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <link
+    name="wheelBR">
+    <inertial>
+      <origin
+        xyz="6.27983776091412E-11 -1.35072508733458E-13 2.16834328270465E-11"
+        rpy="0 0 0" />
+      <mass
+        value="0.374612932792008" />
+      <inertia
+        ixx="0.000379650011198177"
+        ixy="-5.69377102898973E-21"
+        ixz="4.16653147025986E-14"
+        iyy="0.000379650011198177"
+        iyz="1.01703838044063E-16"
+        izz="0.000685202275649919" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelBR.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 0 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://rover26/meshes/wheelBR.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="wheelBR_joint"
+    type="revolute">
+    <origin
+      xyz="-0.015 0 -0.070418"
+      rpy="-1.5708 0 0" />
+    <parent
+      link="castorBR" />
+    <child
+      link="wheelBR" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.14159"
+      upper="3.14159"
+      effort="5"
+      velocity="20" />
+  </joint>
+  <!-- Gazebo differential drive plugin -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
+      <left_joint>leftwheel_joint</left_joint>
+      <right_joint>rightwheel_joint</right_joint>
+      <wheel_separation>0.6972</wheel_separation>
+      <wheel_radius>0.1</wheel_radius>
+      <topic>cmd_vel</topic>
+      <odom_topic>odom</odom_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+    </plugin>
+  </gazebo>
+
+  <!-- Lidar plugin -->
+  <gazebo reference="lidar">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <update_rate>10</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.1</min>
+          <max>10.0</max>
+        </range>
+      </lidar>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <!-- Camera plugin -->
+  <gazebo reference="camera">
+    <sensor name="camera" type="camera">
+      <topic>camera/image</topic>
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.3962634</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>480</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>100</far>
+        </clip>
+      </camera>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="rightwheel">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+  </gazebo>
+  <gazebo reference="leftwheel">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+  </gazebo>
+  <gazebo reference="wheelFL">
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
+  </gazebo>
+  <gazebo reference="wheelFR">
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
+  </gazebo>
+  <gazebo reference="wheelBL">
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
+  </gazebo>
+  <gazebo reference="wheelBR">
+    <mu1>0.5</mu1>
+    <mu2>0.5</mu2>
+  </gazebo>
+  
+</robot>
+
