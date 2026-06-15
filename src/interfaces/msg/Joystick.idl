@@ -1,0 +1,68 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from interfaces/msg/Joystick.msg
+// generated code does not contain a copyright notice
+
+
+module interfaces {
+  module msg {
+    struct Joystick {
+      @verbatim (language="comment", text=
+        "Yaw")
+      double left_x_axis;
+
+      double left_y_axis;
+
+      double right_x_axis;
+
+      double right_y_axis;
+
+      @verbatim (language="comment", text=
+        "Analog Acceleration")
+      double r2_axis;
+
+      @verbatim (language="comment", text=
+        "Analog Brake/Reverse")
+      double l2_axis;
+
+      boolean button_x;
+
+      boolean button_o;
+
+      boolean button_tri;
+
+      boolean button_rect;
+
+      boolean button_r1;
+
+      boolean button_r2;
+
+      boolean button_r3;
+
+      boolean button_l1;
+
+      boolean button_l2;
+
+      boolean button_l3;
+
+      boolean button_left;
+
+      boolean button_right;
+
+      @verbatim (language="comment", text=
+        "Use for Servo Up")
+      boolean button_top;
+
+      @verbatim (language="comment", text=
+        "Use for Servo Down")
+      boolean button_bot;
+
+      boolean button_options;
+
+      boolean button_share;
+
+      boolean button_pad;
+
+      boolean button_ps;
+    };
+  };
+};

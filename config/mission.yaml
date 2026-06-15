@@ -1,0 +1,3 @@
+waypoints: []
+vision_timeout_sec: 120.0
+min_confidence_score: 0.80

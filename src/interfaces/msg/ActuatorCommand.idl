@@ -1,0 +1,54 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from interfaces/msg/ActuatorCommand.msg
+// generated code does not contain a copyright notice
+
+#include "std_msgs/msg/Header.idl"
+
+module interfaces {
+  module msg {
+    struct ActuatorCommand {
+      std_msgs::msg::Header header;
+
+      @verbatim (language="comment", text=
+        "Motor 1" "\n"
+        "0=forward  1=reverse")
+      uint8 m1_dir;
+
+      @verbatim (language="comment", text=
+        "0=off      1=on")
+      uint8 m1_brake;
+
+      @verbatim (language="comment", text=
+        "0.0–1.0 duty cycle")
+      float m1_speed;
+
+      @verbatim (language="comment", text=
+        "Motor 2" "\n"
+        "0=forward  1=reverse")
+      uint8 m2_dir;
+
+      @verbatim (language="comment", text=
+        "0=off      1=on")
+      uint8 m2_brake;
+
+      @verbatim (language="comment", text=
+        "0.0–1.0 duty cycle")
+      float m2_speed;
+
+      @verbatim (language="comment", text=
+        "Laser" "\n"
+        "0=off  1=on")
+      uint8 laser;
+
+      @verbatim (language="comment", text=
+        "Flash" "\n"
+        "0=off  1=on")
+      uint8 flash;
+
+      @verbatim (language="comment", text=
+        "Servo" "\n"
+        "degrees")
+      float servo;
+    };
+  };
+};

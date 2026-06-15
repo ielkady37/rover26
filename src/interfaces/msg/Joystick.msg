@@ -1,0 +1,25 @@
+float64 left_x_axis   # Yaw
+float64 left_y_axis
+float64 right_x_axis
+float64 right_y_axis
+float64 r2_axis        # Analog Acceleration
+float64 l2_axis        # Analog Brake/Reverse
+
+bool button_x
+bool button_o
+bool button_tri        
+bool button_rect
+bool button_r1
+bool button_r2
+bool button_r3
+bool button_l1
+bool button_l2
+bool button_l3
+bool button_left
+bool button_right
+bool button_top        # Use for Servo Up
+bool button_bot        # Use for Servo Down
+bool button_options
+bool button_share
+bool button_pad
+bool button_ps

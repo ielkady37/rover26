@@ -1,0 +1,27 @@
+// generated from rosidl_adapter/resource/msg.idl.em
+// with input from interfaces/msg/LogEntry.msg
+// generated code does not contain a copyright notice
+
+#include "builtin_interfaces/msg/Time.idl"
+
+module interfaces {
+  module msg {
+    struct LogEntry {
+      @verbatim (language="comment", text=
+        "SUCC | INFO | WARN | ERR")
+      string level;
+
+      @verbatim (language="comment", text=
+        "Name of the class that called the logger")
+      string source_class;
+
+      @verbatim (language="comment", text=
+        "nodes | services | helpers | general | …")
+      string category;
+
+      string message;
+
+      builtin_interfaces::msg::Time stamp;
+    };
+  };
+};

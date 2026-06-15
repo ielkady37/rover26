@@ -1,0 +1,83 @@
+from launch import LaunchDescription
+from launch_ros.actions import Node
+import xacro
+import os
+from ament_index_python.packages import get_package_share_directory
+
+def generate_launch_description():
+
+    rover26_pkg = get_package_share_directory('rover26')
+    xacro_file  = os.path.join(rover26_pkg, 'description', 'rover26.urdf.xacro')
+    robot_desc  = xacro.process_file(xacro_file).toxml()
+
+    # Robot State Publisher
+    robot_state_publisher_node = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        parameters=[{'robot_description': robot_desc}],
+        output='screen',
+    )
+
+    # Joystick Node
+    joystick_node = Node(
+        package='control',
+        executable='joystick_node',
+        output="screen",
+        name="joystick_node"
+    )
+
+    # ESP Bridge Node — base_frame set to base_footprint to match URDF
+    esp_bridge_node = Node(
+        package='control',
+        executable='esp_bridge_node',
+        output="screen",
+        name="esp_bridge_node",
+        parameters=[{'base_frame': 'base_footprint'}]
+    )
+
+    # Manual Navigation Node
+    manual_navigation_node = Node(
+        package='control',
+        executable='manual_navigation_node',
+        output="screen",
+        emulate_tty=True,
+        name="manual_navigation_node"
+    )
+
+    # Autonomous Navigation Node
+    autonomous_navigation_node = Node(
+        package='control',
+        executable='autonomous_navigation_node',
+        output="screen",
+        emulate_tty=True,
+        name="autonomous_navigation_node"
+    )
+
+    # Mission Manager Node
+    mission_manager_node = Node(
+        package='control',
+        executable='mission_manager_node',
+        output="screen",
+        emulate_tty=True,
+        name="mission_manager_node"
+    )
+
+    # ROSBridge WebSocket Server
+    rosbridge_server_node = Node(
+        package='rosbridge_server',
+        executable='rosbridge_websocket',
+        output='screen',
+        name='rosbridge_websocket',
+        parameters=[{'port': 9090}]
+    )
+
+    return LaunchDescription([
+        robot_state_publisher_node,
+        joystick_node,
+        manual_navigation_node,
+        autonomous_navigation_node,
+        esp_bridge_node,
+        mission_manager_node,
+        rosbridge_server_node,
+    ])
