@@ -22,7 +22,7 @@ from sensor_msgs.msg import Image
 from utils.Logger import RoverLogger
 from utils.Configurator import Configurator
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy
-from interfaces.msg import FaceRecognitionResult, PotholesDetectionResult
+from interfaces.msg import FaceRecognitionResult, PotholesDetectionResult, LaneDetectionResult
 
 _QOS_DEPTH = 10
 
@@ -38,6 +38,7 @@ class CameraViewerNode(Node):
 
         self._setup_subscriptions()
         self._setup_face_recognition_subscription()
+        self._setup_lane_detection_subscription()
         self._setup_potholes_detection_subscription()
 
     # ------------------------------------------------------------------
@@ -112,6 +113,21 @@ class CameraViewerNode(Node):
         )
         self._log.info('CameraViewerNode: subscribed to /pothole_detection')
 
+    def _setup_lane_detection_subscription(self) -> None:
+        result_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=_QOS_DEPTH,
+            reliability=ReliabilityPolicy.RELIABLE,
+        )
+        self._frames['lane detection'] = None
+        self.create_subscription(
+            LaneDetectionResult,
+            '/lane_detection',
+            self._on_lane_result,
+            result_qos,
+        )
+        self._log.info('CameraViewerNode: subscribed to /lane_detection')
+
     # ------------------------------------------------------------------
     # Subscription callback
 
@@ -140,6 +156,13 @@ class CameraViewerNode(Node):
         except Exception as exc:
             self._log.err(f'CameraViewerNode: potholes result error: {exc}')
 
+    def _on_lane_result(self, msg: LaneDetectionResult) -> None:
+        try:
+            frame = self._bridge.imgmsg_to_cv2(msg.annotated_frame, desired_encoding='bgr8')
+            self._frames['lane detection'] = frame
+        except Exception as exc:
+            self._log.err(f'CameraViewerNode: lane result error: {exc}')
+
     # ------------------------------------------------------------------
     # Display (called from the main loop)
 
@@ -166,4 +189,5 @@ def main(args=None) -> None:
     finally:
         cv2.destroyAllWindows()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

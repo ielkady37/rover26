@@ -72,3 +72,60 @@ class CVUtilities:
             return map1, map2
         except Exception:
             return None, None
+
+    @staticmethod
+    def letterbox(img, new_shape=(640, 640), color=(114, 114, 114),
+                  auto=True, scaleFill=False, scaleup=True, stride=32):
+        """Resize and pad *img* to meet stride-multiple constraints.
+
+        Returns ``(img, ratio, (dw, dh))``.
+        """
+        shape = img.shape[:2]
+        if isinstance(new_shape, int):
+            new_shape = (new_shape, new_shape)
+        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+        if not scaleup:
+            r = min(r, 1.0)
+        ratio = r, r
+        new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
+        dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
+        if auto:
+            dw, dh = np.mod(dw, stride), np.mod(dh, stride)
+        elif scaleFill:
+            dw, dh = 0.0, 0.0
+            new_unpad = (new_shape[1], new_shape[0])
+            ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]
+        dw /= 2
+        dh /= 2
+        if shape[::-1] != new_unpad:
+            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+        img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+        return img, ratio, (dw, dh)
+
+    @staticmethod
+    def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
+        """Rescale xyxy coords from *img1_shape* space back to *img0_shape* space."""
+        if ratio_pad is None:
+            gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])
+            pad = (
+                (img1_shape[1] - img0_shape[1] * gain) / 2,
+                (img1_shape[0] - img0_shape[0] * gain) / 2,
+            )
+        else:
+            gain = ratio_pad[0][0]
+            pad = ratio_pad[1]
+        coords[:, [0, 2]] -= pad[0]
+        coords[:, [1, 3]] -= pad[1]
+        coords[:, :4] /= gain
+        CVUtilities.clip_coords(coords, img0_shape)
+        return coords
+
+    @staticmethod
+    def clip_coords(boxes, img_shape):
+        """Clip bounding xyxy boxes to image dimensions in-place."""
+        boxes[:, 0].clamp_(0, img_shape[1])
+        boxes[:, 1].clamp_(0, img_shape[0])
+        boxes[:, 2].clamp_(0, img_shape[1])
+        boxes[:, 3].clamp_(0, img_shape[0])

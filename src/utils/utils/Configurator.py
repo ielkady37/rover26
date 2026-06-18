@@ -11,6 +11,7 @@ class Configurator():
     CAMERAS = "cameras"
     FACE_RECOGNITION = "face_recognition"
     POTHOLES_DETECTION = "potholes_detection"
+    LANE_DETECTION = "lane_detection"
     
     def __init__(self):
         self.__configFile = ''
@@ -51,6 +52,8 @@ class Configurator():
             config_filename = Configurator.FACE_RECOGNITION
         elif data_type == Configurator.POTHOLES_DETECTION:
             config_filename = Configurator.POTHOLES_DETECTION
+        elif data_type == Configurator.LANE_DETECTION:
+            config_filename = Configurator.LANE_DETECTION
         else:
             self.__raiseTypeError(data_type)
         
