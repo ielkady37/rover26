@@ -58,6 +58,21 @@ def generate_launch_description():
         }]
     )
 
+    # HoverBoard Node
+    hoverboard_node = Node(
+        package='control',
+        executable='hoverboard_node',
+        output="screen",
+        name="hoverboard_node",
+        parameters=[{
+            'uart_port': '/dev/ttyUSB0',
+            'baudrate': 115200,
+            'timeout': 0.1,
+            'max_speed': 500,
+            'base_frame': 'base_link',
+        }]
+    )
+
     # Manual Navigation Node
     manual_navigation_node = Node(
         package='control',
@@ -96,9 +111,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         robot_state_publisher_node,
-        sllidar_node,
+        # sllidar_node,
         joystick_node,
-        esp_bridge_node,
+        # esp_bridge_node,
+        hoverboard_node,
         manual_navigation_node,
         autonomous_navigation_node,
         mission_manager_node,

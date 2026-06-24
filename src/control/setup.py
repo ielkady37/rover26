@@ -32,6 +32,7 @@ setup(
             'manual_navigation_node = control.nodes.ManualNavigationNode:main',
             'autonomous_navigation_node = control.nodes.AutonomousNavigationNode:main',
             'mission_manager_node = control.nodes.MissionManagerNode:main',
+            'hoverboard_node      = control.nodes.HoverBoardNode:main',
         ],
     },
 )
