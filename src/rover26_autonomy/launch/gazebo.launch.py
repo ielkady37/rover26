@@ -83,6 +83,7 @@ def generate_launch_description():
     world_file       = os.path.join(rover26_pkg,  'worlds', 'competition_track_world.sdf')
     nav2_params      = os.path.join(autonomy_pkg, 'config', 'nav2_params.yaml')
     mapper_params    = os.path.join(autonomy_pkg, 'config', 'mapper_params_online_async.yaml')
+    navsat_params    = os.path.join(autonomy_pkg, 'config', 'navsat_transform_params.yaml')
 
 
     # Process the xacro file into a full URDF XML string.
@@ -160,7 +161,10 @@ def generate_launch_description():
                 # Published directly at /joint_states by gz-sim-joint-state-publisher-system.
                 # No remapping needed — the topic name is already correct.
                 '/joint_states@sensor_msgs/msg/JointState[gz.msgs.Model',
+                # GPS: Gazebo → ROS (remapped /gps/location -> /gps/fix below)
+                '/gps/location@sensor_msgs/msg/NavSatFix[gz.msgs.NavSat',
             ],
+            remappings=[('/gps/location', '/gps/fix')],
             # No parameters= here — nav2_params does not belong on the bridge node
             output='screen',
         ),
@@ -262,7 +266,38 @@ def generate_launch_description():
                     output='screen',
                 ),
 
-                # ── Dual LiDAR scan merger ─────────────────────────────────────
+                # ── GPS → map-frame conversion service ─────────────────────────
+                # Provides /fromLL (used by mission_manager to convert
+                # Waypoint 2/3 lat/lon into map-frame goals). Fed by /odom as
+                # its "/odometry/filtered" input — broadcast_utm_transform is
+                # False so it never touches TF; slam_toolbox still solely
+                # owns map → odom.
+                Node(
+                    package='robot_localization',
+                    executable='navsat_transform_node',
+                    name='navsat_transform',
+                    parameters=[navsat_params],
+                    remappings=[
+                        ('/imu/data',           '/imu'),
+                        ('/gps/fix',            '/gps/fix'),
+                        ('/odometry/filtered',  '/odom'),
+                        ('/odometry/gps',       '/odometry/gps'),
+                    ],
+                    output='screen',
+                ),
+
+                # ── Mission state machine ───────────────────────────────────────
+                # Lane-follow until near Waypoint 1, GPS-navigate to
+                # Waypoint 2 then 3, then hand control back to lane-follow.
+                Node(
+                    package='rover26_autonomy',
+                    executable='mission_manager',
+                    name='mission_manager',
+                    parameters=[{'use_sim_time': True}],
+                    output='screen',
+                ),
+
+
                 # Merges two LaserScan sources into /scan_merged for SLAM/Nav2:
                 #   /scan           — physical LiDAR on the rover
                 #   /detection/scan — synthetic scan from lane detection camera

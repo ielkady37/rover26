@@ -72,7 +72,7 @@ from rclpy.action import ActionClient
 from geometry_msgs.msg      import PoseStamped, Twist
 from nav_msgs.msg           import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
-from std_msgs.msg           import ColorRGBA
+from std_msgs.msg           import ColorRGBA, Bool
 from rover26.msg            import LaneStatus
 from nav2_msgs.action       import NavigateToPose
 
@@ -124,6 +124,14 @@ class LaneGoalPublisher(Node):
         self._current_goal_yaw: float | None      = None
         self._consecutive_failures: int           = 0
 
+        # ── Mission-manager pause/resume ────────────────────────────────────────
+        # When False, this node stops sending NEW NavigateToPose goals and
+        # cancels whatever goal is currently in flight. Driven by
+        # mission_manager so it can hand the navigate_to_pose action server
+        # over to GPS waypoint navigation without the two nodes fighting
+        # over the same goal slot.
+        self._mission_enabled:  bool              = True
+
         # ── Rotation recovery state ─────────────────────────────────────────────
         self._last_valid_goal_yaw:     float | None  = None
         self._last_valid_time_s:       float | None  = None
@@ -149,6 +157,7 @@ class LaneGoalPublisher(Node):
         # ── Subscriptions ────────────────────────────────────────────────────────
         self.create_subscription(LaneStatus, RosTopics.LANE_STATUS, self._lane_cb, 10)
         self.create_subscription(Odometry,   RosTopics.ODOM,        self._odom_cb, 10)
+        self.create_subscription(Bool, '/mission/lane_enable', self._mission_enable_cb, 10)
 
         # ── Watchdog timer ───────────────────────────────────────────────────────
         self.create_timer(1.0 / Cfg.WATCHDOG_HZ, self._watchdog_cb)
@@ -211,6 +220,31 @@ class LaneGoalPublisher(Node):
     def _odom_cb(self, msg: Odometry) -> None:
         """Cache the latest odometry pose (position + orientation quaternion)."""
         self.current_odom = msg.pose.pose
+
+    def _mission_enable_cb(self, msg: Bool) -> None:
+        """
+        React to mission_manager pausing/resuming lane-following.
+
+        On disable: cancel any in-flight NavigateToPose goal, stop rotation
+        recovery, and clear the goal-throttle anchor so the very first goal
+        after re-enabling is computed fresh (not skipped as "too close").
+        On enable: nothing extra needed — _lane_cb resumes on the next
+        /lane_status message.
+        """
+        was_enabled = self._mission_enabled
+        self._mission_enabled = msg.data
+
+        if was_enabled and not msg.data:
+            self.get_logger().info('[mission] Lane-following PAUSED — handing off to waypoint nav')
+            self._goal_generation += 1  # invalidate any pending result callbacks
+            if self._current_goal_handle is not None:
+                self._current_goal_handle.cancel_goal_async()
+                self._current_goal_handle = None
+            self._nav_active   = False
+            self._is_rotating  = False
+            self.last_goal_xy  = None
+        elif (not was_enabled) and msg.data:
+            self.get_logger().info('[mission] Lane-following RESUMED')
 
     # =========================================================================
     #  CURVATURE BLEND HELPERS  (each returns 0 → 1)
@@ -335,6 +369,9 @@ class LaneGoalPublisher(Node):
           - The new goal is too close to the previous one (goal throttle)
         """
         self._last_lane_status_time_s = self.get_clock().now().nanoseconds * 1e-9
+
+        if not self._mission_enabled:
+            return
 
         if not self._nav_server_ready or self.current_odom is None:
             return
@@ -567,6 +604,8 @@ class LaneGoalPublisher(Node):
         Detects topic silence and triggers rotation recovery.
         Also runs the goal proximity checker on every tick.
         """
+        if not self._mission_enabled:
+            return
         if not self._nav_server_ready or self.current_odom is None:
             return
         if self._last_lane_status_time_s is None:

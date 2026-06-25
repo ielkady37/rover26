@@ -44,7 +44,10 @@ setup(
             'twist_unstamper         = rover26_autonomy.nodes.twist_unstamper:main',
 
             #real tests
-            'real_lidar_relay           = rover26_autonomy.nodes.real_lidar_relay:main',   
+            'real_lidar_relay           = rover26_autonomy.nodes.real_lidar_relay:main',  
+
+            #mission manager
+            'mission_manager          = rover26_autonomy.nodes.mission_manager:main', 
         ],
     },
 )

@@ -14,6 +14,24 @@
       <render_engine>ogre2</render_engine>
     </plugin>
     <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+
+    <!--
+      GPS ANCHOR (placeholder — swap for the real competition coordinates
+      once given). World (0,0,0) — where start_line sits — is pinned to this
+      lat/lon. Every other model's local x/y converts to lat/lon relative to
+      this point, so waypoint_1/2/3 below will report consistent GPS fixes.
+      Picked here: Alexandria, Egypt, sea level.
+    -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>31.2001</latitude_deg>
+      <longitude_deg>29.9187</longitude_deg>
+      <elevation>10.0</elevation>
+      <heading_deg>0.0</heading_deg>
+    </spherical_coordinates>
+
 
     <!-- Lighting -->
     <light name="sun" type="directional">

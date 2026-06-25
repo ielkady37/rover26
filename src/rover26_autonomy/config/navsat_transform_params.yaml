@@ -1,0 +1,12 @@
+navsat_transform:
+  ros__parameters:
+    use_sim_time: true
+    frequency: 10.0
+    delay: 3.0                      # let a few /gps/fix + /odom messages arrive first
+    magnetic_declination_radians: 0.0
+    yaw_offset: 0.0
+    zero_altitude: true
+    broadcast_utm_transform: false  # slam_toolbox owns map->odom, we don't touch TF
+    publish_filtered_gps: false
+    use_odometry_yaw: true
+    wait_for_datum: false           # datum is set from the first /gps/fix + /odometry/filtered pair

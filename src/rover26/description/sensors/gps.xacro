@@ -1,13 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
 
-  <!-- ═══════════════════════════════════════════════════════════════════════
-       GPS JOINT
-       Old xyz: "0 0 0.05"
-       Rotation applied: new_x = -old_y = 0,  new_y = old_x = 0
-       Result: "0 0 0.05" — no change (GPS is centered on the robot).
-       rpy stays "0 0 0" (GPS is orientation-agnostic).
-  ════════════════════════════════════════════════════════════════════════════ -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <joint name="gps_joint" type="fixed">
     <parent link="base_link"/>
     <child link="gps_link"/>
@@ -15,7 +9,7 @@
   </joint>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       GPS LINK — unchanged
+       GPS LINK 
   ════════════════════════════════════════════════════════════════════════════ -->
   <link name="gps_link">
     <inertial>
@@ -37,7 +31,7 @@
   </link>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
-       GAZEBO SENSOR PLUGIN — unchanged
+       GAZEBO SENSOR PLUGIN
   ════════════════════════════════════════════════════════════════════════════ -->
   <gazebo reference="gps_link">
     <sensor name="gps" type="navsat">
@@ -55,7 +49,7 @@
           <vertical>
             <noise type="gaussian">
               <mean>0.0</mean>
-              <stddev>0.001</stddev>
+              <stddev>0.0000135</stddev>
             </noise>
           </vertical>
         </position_sensing>
