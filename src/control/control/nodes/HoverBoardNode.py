@@ -5,6 +5,7 @@ import serial
 import rclpy
 from rclpy.node import Node
 from interfaces.msg import ActuatorCommand as ActuatorCommandMsg, EncoderSpeeds
+from utils.Logger import RoverLogger
 
 _START_FRAME: int = 0xABCD
 _TX_SIZE:     int = 8
@@ -56,9 +57,10 @@ class HoverBoardNode(Node):
         baudrate   = self.get_parameter("baudrate").value
         self._max_speed  = int(self.get_parameter("max_speed").value)
         read_hz    = int(self.get_parameter("read_hz").value)
+        self._logger = RoverLogger(self)
 
         if not uart_port:
-            self.get_logger().fatal("Parameter 'uart_port' is required.")
+            self._logger.err("Parameter 'uart_port' is required.")
             raise RuntimeError("uart_port parameter is required")
 
         # ── serial port: timeout=0 → non-blocking reads ──────────────────
@@ -75,7 +77,7 @@ class HoverBoardNode(Node):
             self._serial.reset_input_buffer()
             self._serial.reset_output_buffer()
         except Exception as e:
-            self.get_logger().fatal(f"Failed to open {uart_port}: {e}")
+            self._logger.err(f"Failed to open {uart_port}: {e}")
             raise
 
         # ── accumulation buffer for partial frames ───────────────────────
@@ -90,7 +92,7 @@ class HoverBoardNode(Node):
         # ── single timer replaces the reader thread ──────────────────────
         self._read_timer = self.create_timer(1.0 / read_hz, self._read_tick)
 
-        self.get_logger().info(
+        self._logger.info(
             f"HoverBoardNode started — port={uart_port} baud={baudrate} "
             f"max_speed={self._max_speed} read_hz={read_hz}"
         )
@@ -98,13 +100,18 @@ class HoverBoardNode(Node):
     # ── command callback: fires immediately on message receipt ───────────
 
     def _cmd_cb(self, msg: ActuatorCommandMsg) -> None:
-        left = max(-1.0, min(1.0, float(msg.m1_speed)))
+        # self._logger.info(
+        #     f"Received ActuatorCommand: m1_speed={msg.m1_speed} m1_dir={msg.m1_dir} "
+        #     f"m1_brake={msg.m1_brake} m2_speed={msg.m2_speed} m2_dir={msg.m2_dir} "
+        #     f"m2_brake={msg.m2_brake}"
+        # )
+        left  = max(0.0, min(1.0, float(msg.m1_speed) / 255.0))
         if msg.m1_dir == 1:
             left = -left
         if msg.m1_brake == 1:
             left = 0.0
 
-        right = max(-1.0, min(1.0, float(msg.m2_speed)))
+        right = max(0.0, min(1.0, float(msg.m2_speed) / 255.0))
         if msg.m2_dir == 1:
             right = -right
         if msg.m2_brake == 1:
@@ -112,11 +119,12 @@ class HoverBoardNode(Node):
 
         speed = int(((left + right) / 2.0) * self._max_speed)
         steer = int(((left - right) / 2.0) * self._max_speed)
+        # self._logger.info(f"Received command: left={left:.2f} right={right:.2f} → speed={speed} steer={steer}")
 
         try:
             self._serial.write(_build_tx_frame(steer, speed))
         except Exception as e:
-            self.get_logger().warn(
+            self._logger.warn(
                 f"Hoverboard write failed: {e}", throttle_duration_sec=5.0
             )
 
@@ -145,7 +153,7 @@ class HoverBoardNode(Node):
 
             if idx > 0:
                 # Junk bytes before the marker — discard them
-                self.get_logger().warn(
+                self._logger.warn(
                     f"Discarding {idx} out-of-sync bytes", throttle_duration_sec=2.0
                 )
                 self._rx_buf = self._rx_buf[idx:]

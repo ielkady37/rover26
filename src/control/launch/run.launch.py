@@ -54,7 +54,7 @@ def generate_launch_description():
         parameters=[{
             'base_frame': 'base_footprint',
             'sensor_port': '/dev/ttyUSB0',
-            'actuator_port': '/dev/ttyUSB2',
+            'actuator_port': '/dev/ttyUSB3',
         }]
     )
 
@@ -68,7 +68,7 @@ def generate_launch_description():
             'uart_port': '/dev/ttyUSB0',
             'baudrate': 115200,
             'timeout': 0.1,
-            'max_speed': 500,
+            'max_speed': 650,
             'base_frame': 'base_link',
         }]
     )
