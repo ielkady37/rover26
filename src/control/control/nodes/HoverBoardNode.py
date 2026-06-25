@@ -125,7 +125,7 @@ class HoverBoardNode(Node):
             self._serial.write(_build_tx_frame(steer, speed))
         except Exception as e:
             self._logger.warn(
-                f"Hoverboard write failed: {e}", throttle_duration_sec=5.0
+                f"Hoverboard write failed: {e}"
             )
 
     # ── timer tick: drain whatever bytes arrived since last tick ─────────
