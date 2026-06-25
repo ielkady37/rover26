@@ -78,7 +78,7 @@ class ESPBridgeNode(Node):
         self._imu_pub     = self.create_publisher(Imu,                "/imu",      10)
         self._odom_pub    = self.create_publisher(Odometry,           "/odom",     10)
         self._euler_pub   = self.create_publisher(EulerAngles,        "/euler",    10)
-        self._encoder_pub = self.create_publisher(EncoderRevolutions, "/encoders", 10)
+        self._encoder_pub = self.create_publisher(EncoderRevolutions, "/encoders_revs", 10)
         self._gps_pub     = self.create_publisher(NavSatFix,           "/gps",      10)
         self._tf_broadcaster = TransformBroadcaster(self)
 

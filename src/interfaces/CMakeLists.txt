@@ -17,6 +17,7 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EulerAngles.msg"
   "msg/EncoderRevolutions.msg"
+  "msg/EncoderSpeeds.msg"
   "msg/ActuatorCommand.msg"
   "msg/LogEntry.msg"
   "msg/HealthReport.msg"
