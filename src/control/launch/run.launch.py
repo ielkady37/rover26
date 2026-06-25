@@ -65,7 +65,7 @@ def generate_launch_description():
         output="screen",
         name="hoverboard_node",
         parameters=[{
-            'uart_port': '/dev/ttyUSB0',
+            'uart_port': '/dev/ttyUSB2',
             'baudrate': 115200,
             'timeout': 0.1,
             'max_speed': 650,

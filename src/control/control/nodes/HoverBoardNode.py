@@ -154,7 +154,7 @@ class HoverBoardNode(Node):
             if idx > 0:
                 # Junk bytes before the marker — discard them
                 self._logger.warn(
-                    f"Discarding {idx} out-of-sync bytes", throttle_duration_sec=2.0
+                    f"Discarding {idx} out-of-sync bytes"
                 )
                 self._rx_buf = self._rx_buf[idx:]
 
