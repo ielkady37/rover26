@@ -8,6 +8,7 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
@@ -23,7 +24,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HealthReport.msg"
   "msg/Joystick.msg"
   "msg/TargetStatus.msg"
-  DEPENDENCIES builtin_interfaces std_msgs
+  "msg/FaceRecognitionResult.msg"
+  "msg/PotholesDetectionResult.msg"
+  "msg/LaneDetectionResult.msg"
+  DEPENDENCIES builtin_interfaces std_msgs sensor_msgs
 ) # <-- Added the missing parenthesis here
 
 if(BUILD_TESTING)

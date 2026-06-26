@@ -1,0 +1,15 @@
+camera_name: fisheye_camera
+
+# YOLOPv2 model
+weights: ./models/yolopv2.pt
+img_size: 640
+conf_thres: 0.3
+iou_thres: 0.45
+device: "0"
+
+# Lane mask EMA smoothing (set alpha=0 to disable)
+lane_ema_alpha: 0.0
+lane_ema_thresh: 0.0
+
+# Polynomial degree for lane coefficient fitting (2 = quadratic)
+poly_degree: 2
