@@ -68,7 +68,7 @@ def generate_launch_description():
             'uart_port': '/dev/ttyUSB2',
             'baudrate': 115200,
             'timeout': 0.1,
-            'max_speed': 650,
+            'max_speed': 200,
             'base_frame': 'base_link',
         }]
     )
@@ -113,7 +113,7 @@ def generate_launch_description():
         robot_state_publisher_node,
         # sllidar_node,
         joystick_node,
-        # esp_bridge_node,
+        esp_bridge_node,
         hoverboard_node,
         manual_navigation_node,
         autonomous_navigation_node,
