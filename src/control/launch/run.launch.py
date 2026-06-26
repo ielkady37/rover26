@@ -109,6 +109,14 @@ def generate_launch_description():
         parameters=[{'port': 9090}]
     )
 
+    #Camera Streaming Node
+    camera_streaming_node = Node(
+        package='cv',
+        executable='camera_streaming_node',
+        output='screen',
+        name='camera_streaming_node',
+    )
+
     return LaunchDescription([
         robot_state_publisher_node,
         # sllidar_node,
@@ -119,4 +127,5 @@ def generate_launch_description():
         autonomous_navigation_node,
         mission_manager_node,
         rosbridge_server_node,
+        camera_streaming_node,
     ])

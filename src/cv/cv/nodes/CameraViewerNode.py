@@ -58,7 +58,7 @@ class CameraViewerNode(Node):
         image_qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=_QOS_DEPTH,
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
         )
 
         for cam_name, cam_cfg in cameras_cfg.items():
