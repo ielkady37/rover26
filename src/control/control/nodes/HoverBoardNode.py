@@ -109,16 +109,16 @@ class HoverBoardNode(Node):
         right = max(0.0, min(1.0, float(msg.m2_speed) / 255.0))
 
         if msg.m1_dir == 1:
-            left = left
+            left = -left
         if msg.m1_brake == 1:
             left = 0.0
 
         if msg.m2_dir == 1:
-            right = right
+            right = -right
         if msg.m2_brake == 1:
             right = 0.0
 
-        speed = int(((left + right) / 2.0) * self._max_speed)
+        speed = int(-((left + right) / 2.0) * self._max_speed)
         steer = int(((left - right) / 2.0) * self._max_speed)
         # self._logger.info(f"Received command: left={left:.2f} right={right:.2f} → speed={speed} steer={steer}")
 
