@@ -50,6 +50,8 @@ class MissionManagerNode(Node):
 
         # 2. Setup Lifecycle Service Clients
         self.manual_client = self.create_client(ChangeState, '/manual_navigation_node/change_state')
+        self.manual_camera_client = self.create_client(ChangeState, '/manual_camera_streaming_node/change_state')
+        self.auto_camera_client = self.create_client(ChangeState, '/autonomous_camera_streaming_node/change_state')
         self.auto_client = self.create_client(ChangeState, '/autonomous_navigation_node/change_state')
 
         # 3. Setup Nav2 Action Client
@@ -75,16 +77,20 @@ class MissionManagerNode(Node):
         # Ensure services are available before sending requests
         self.manual_client.wait_for_service(timeout_sec=5.0)
         self.auto_client.wait_for_service(timeout_sec=5.0)
-
+        self.manual_camera_client.wait_for_service(timeout_sec=5.0)
+        self.auto_camera_client.wait_for_service(timeout_sec=5.0)
         self._log.info("Configuring Navigation Nodes (Loading YAMLs, Shared Memory, etc.)...")
         
         # 1. Send CONFIGURE to both (Moves them to 'Inactive')
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CONFIGURE, "ManualNav")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_CONFIGURE, "AutoNav")
-        
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_CONFIGURE, "ManualCamera")
+        self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_CONFIGURE, "AutoCamera")
+
         # 2. Automatically Activate Phase 1 (Manual)
         self._log.info("Boot sequence complete. Activating default Phase 1 (Manual).")
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_ACTIVATE, "ManualNav")
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_ACTIVATE, "ManualCamera")
 
     def _execute_transition_to_manual(self):
         """Safely pauses Auto and spins up Manual."""
@@ -92,9 +98,11 @@ class MissionManagerNode(Node):
         
         # 1. Deactivate Autonomous Node (Active -> Inactive)
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_DEACTIVATE, "AutoNav")
+        self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
         
         # 2. Activate Manual Node (Inactive -> Active)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_ACTIVATE, "ManualNav")
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_ACTIVATE, "ManualCamera")
 
     def _execute_transition_to_auto(self):
         """Safely pauses Manual, spins up Auto, and triggers Waypoint 1."""
@@ -102,9 +110,11 @@ class MissionManagerNode(Node):
         
         # 1. Deactivate Manual Node (Active -> Inactive)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_DEACTIVATE, "ManualNav")
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
         
         # 2. Activate Autonomous Node (Inactive -> Active)
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_ACTIVATE, "AutoNav")
+        self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_ACTIVATE, "AutoCamera")
 
         # 3. Ensure Nav2 is ready, then dispatch the first waypoint
         if not self.nav_client.wait_for_server(timeout_sec=3.0):
@@ -122,11 +132,15 @@ class MissionManagerNode(Node):
         
         # First ensure they are deactivated
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_DEACTIVATE, "ManualNav")
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_DEACTIVATE, "AutoNav")
+        self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
         
         # Then Unconfigure (Cleanup)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CLEANUP, "ManualNav")
+        self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_CLEANUP, "ManualCamera")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_CLEANUP, "AutoNav")
+        self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_CLEANUP, "AutoCamera")
 
     def _change_lifecycle_state(self, client: rclpy.client.Client, transition_id: int, node_label: str):
         """Helper to send standard ROS 2 lifecycle transition requests."""

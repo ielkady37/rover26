@@ -4,7 +4,7 @@ import pytest
 import cv2
 from unittest.mock import MagicMock, patch
 
-from cv.services.CameraStreamer import CameraStreamer
+from cv.cv.services.AutonomousCameraStreamer import AutonomousCameraStreamer
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ _BASE_CFG = {
 
 def _make(overrides=None):
     cfg = {**_BASE_CFG, **(overrides or {})}
-    return CameraStreamer('test_cam', cfg)
+    return AutonomousCameraStreamer('test_cam', cfg)
 
 
 def _fake_frame():
@@ -49,7 +49,7 @@ class TestInit:
         assert s._D is None
 
     def test_defaults_applied_for_missing_optional_keys(self):
-        s = CameraStreamer('cam', {'index': 0})
+        s = AutonomousCameraStreamer('cam', {'index': 0})
         assert s._width == 640
         assert s._height == 480
         assert s._fps == 30

@@ -5,21 +5,22 @@ from cv_bridge import CvBridge
 from rclpy.lifecycle import State
 from sensor_msgs.msg import Image
 from utils.Configurator import Configurator
-from cv.services.CameraStreamer import CameraStreamer
+from cv.services.AutonomousCameraStreamer import AutonomousCameraStreamer
 from rclpy.qos import QoSProfile, HistoryPolicy, ReliabilityPolicy
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
 
 _QOS_DEPTH = 10
 
-class CameraStreamingNode(LifecycleNode):
+class AutonomousCameraStreamingNode(LifecycleNode):
 
     def __init__(self):
-        super().__init__('camera_streaming_node')
+        super().__init__('autonomous_camera_streaming_node')
         self._bridge = CvBridge()
-        self._streamers: dict[str, CameraStreamer] = {}
+        self._streamers: dict[str, AutonomousCameraStreamer] = {}
         self._cam_publishers: dict[str, dict] = {}
         self._cam_timers: list = []
         self._capture_threads: list[threading.Thread] = []
+        self._cameras_config: dict = {}
 
         # Latest frame per camera — written by capture thread, read by timer callback
         self._latest_frames: dict[str, object] = {}
@@ -35,24 +36,14 @@ class CameraStreamingNode(LifecycleNode):
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         self._logger.info('Configuring camera streamer node...')
         try:
-            cameras_config: dict = Configurator().fetchData(Configurator.CAMERAS)
+            self._cameras_config: dict = Configurator().fetchData(Configurator.CAMERAS)
         except Exception as e:
             self._logger.error(f'Failed to load cameras config: {e}')
             return TransitionCallbackReturn.ERROR
 
-        if not cameras_config:
+        if not self._cameras_config:
             self._logger.error('cameras.yaml is empty or could not be loaded.')
             return TransitionCallbackReturn.ERROR
-
-        for camera_name, config in cameras_config.items():
-            streamer = CameraStreamer(camera_name, config)
-            self._streamers[camera_name] = streamer
-            self._cam_publishers[camera_name] = self._create_publishers(
-                camera_name, streamer.is_stereo, streamer.has_calibration)
-            self._logger.info(
-                f"Registered camera '{camera_name}' "
-                f"({'stereo' if streamer.is_stereo else 'mono'})"
-            )
 
         self._logger.info('Camera streamer node configured successfully.')
         return TransitionCallbackReturn.SUCCESS
@@ -61,6 +52,16 @@ class CameraStreamingNode(LifecycleNode):
         self._logger.info('Activating camera streamer node...')
         self._running = True
         active_cameras = []
+
+        for camera_name, config in self._cameras_config.items():
+            streamer = AutonomousCameraStreamer(camera_name, config)
+            self._streamers[camera_name] = streamer
+            self._cam_publishers[camera_name] = self._create_publishers(
+                camera_name, streamer.is_stereo, streamer.has_calibration)
+            self._logger.info(
+                f"Registered camera '{camera_name}' "
+                f"({'stereo' if streamer.is_stereo else 'mono'})"
+            )
 
         for name, streamer in self._streamers.items():
             self._logger.info(f"Opening camera '{name}'...")
@@ -144,7 +145,7 @@ class CameraStreamingNode(LifecycleNode):
     # Capture thread
     # ------------------------------------------------------------------
 
-    def _capture_loop(self, streamer: CameraStreamer) -> None:
+    def _capture_loop(self, streamer: AutonomousCameraStreamer) -> None:
         """
         Runs in a dedicated thread — reads frames as fast as the camera
         produces them and stores the latest one. The ROS timer callback
@@ -237,7 +238,7 @@ class CameraStreamingNode(LifecycleNode):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = CameraStreamingNode()
+    node = AutonomousCameraStreamingNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

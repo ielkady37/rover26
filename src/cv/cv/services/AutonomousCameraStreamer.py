@@ -1,7 +1,6 @@
 import os
 import cv2
 import time
-import logging
 import numpy as np
 from typing import Optional
 from dataclasses import dataclass
@@ -19,7 +18,7 @@ class StereoFrame:
     right_raw: np.ndarray
     right_calibrated: np.ndarray
 
-class CameraStreamer:
+class AutonomousCameraStreamer:
     _OPEN_RETRY_INTERVAL = 0.5   # seconds between retries
     _OPEN_TIMEOUT = 10.0         # total seconds before giving up
 
@@ -226,11 +225,6 @@ class CameraStreamer:
             data = np.load(cal_path)
             if self._is_stereo:
                 if cal_type_norm == 'FISHEYE':
-                    self._log.warn(
-                        '[%s] FISHEYE stereo calibration is not implemented; '
-                        'passthrough mode is active.',
-                        self._name
-                    )
                     return
                 self._load_stereo_calibration(data)
             else:

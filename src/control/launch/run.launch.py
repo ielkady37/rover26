@@ -91,6 +91,24 @@ def generate_launch_description():
         name="autonomous_navigation_node"
     )
 
+    # Manual Camera Streaming Node
+    manual_camera_streaming_node = Node(
+        package='cv',
+        executable='manual_camera_streaming_node',
+        output="screen",
+        emulate_tty=True,
+        name="manual_camera_streaming_node"
+    )
+
+    # Autonomous Camera Streaming Node
+    autonomous_camera_streaming_node = Node(
+        package='cv',
+        executable='autonomous_camera_streaming_node',
+        output="screen",
+        emulate_tty=True,
+        name="autonomous_camera_streaming_node"
+    )
+
     # Mission Manager Node
     mission_manager_node = Node(
         package='control',
@@ -109,13 +127,6 @@ def generate_launch_description():
         parameters=[{'port': 9090}]
     )
 
-    #Camera Streaming Node
-    camera_streaming_node = Node(
-        package='cv',
-        executable='camera_streaming_node',
-        output='screen',
-        name='camera_streaming_node',
-    )
 
     return LaunchDescription([
         robot_state_publisher_node,
@@ -127,5 +138,6 @@ def generate_launch_description():
         autonomous_navigation_node,
         mission_manager_node,
         rosbridge_server_node,
-        camera_streaming_node,
+        manual_camera_streaming_node,
+        autonomous_camera_streaming_node,
     ])

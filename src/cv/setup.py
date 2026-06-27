@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'camera_streaming_node = cv.nodes.CameraStreamingNode:main',
+            'autonomous_camera_streaming_node = cv.nodes.AutonomousCameraStreamingNode:main',
+            'manual_camera_streaming_node = cv.nodes.ManualCameraStreamingNode:main',
             'camera_viewer_node = cv.nodes.CameraViewerNode:main',
             'face_recognition_node = cv.nodes.FaceRecognitionNode:main',
             'pothole_detection_node = cv.nodes.PotholesDetectionNode:main',
