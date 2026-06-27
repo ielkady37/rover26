@@ -69,7 +69,7 @@ class FaceRecognitionNode(LifecycleNode):
             image_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
-                reliability=ReliabilityPolicy.BEST_EFFORT,
+                reliability=ReliabilityPolicy.RELIABLE,
             )
             result_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
@@ -78,7 +78,7 @@ class FaceRecognitionNode(LifecycleNode):
             )
             self._cam_sub = self.create_subscription(
                 Image,
-                f'/{self._cam_name}/uncalibrated',
+                f'/{self._cam_name}/calibrated',
                 self._on_frame,
                 image_qos,
             )
@@ -87,7 +87,7 @@ class FaceRecognitionNode(LifecycleNode):
             )
             self._confirm_counter = 0
             self._log.info(
-                f'FaceRecognitionNode: subscribed to /{self._cam_name}/uncalibrated'
+                f'FaceRecognitionNode: subscribed to /{self._cam_name}/calibrated'
             )
             return TransitionCallbackReturn.SUCCESS
         except Exception as exc:

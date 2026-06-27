@@ -71,7 +71,7 @@ class LaneDetectionNode(LifecycleNode):
             image_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
-                reliability=ReliabilityPolicy.BEST_EFFORT,
+                reliability=ReliabilityPolicy.RELIABLE,
             )
             result_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,

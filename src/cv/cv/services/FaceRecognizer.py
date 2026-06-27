@@ -111,12 +111,12 @@ class FaceRecognizer:
             return raw_frame, False, 0.0
 
         try:
-            frame = (
-                cv2.remap(raw_frame, self._map1, self._map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
-                if self._map1 is not None
-                else raw_frame.copy()
-            )
-
+            # frame = (
+            #     cv2.remap(raw_frame, self._map1, self._map2, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+            #     if self._map1 is not None
+            #     else raw_frame.copy()
+            # )
+            frame = raw_frame.copy()
             results = self._model(frame, stream=True, verbose=False)
             best_score = 0.0
             best_box = None

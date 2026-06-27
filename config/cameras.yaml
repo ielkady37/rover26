@@ -1,12 +1,14 @@
 fisheye_camera:
-  index: /dev/video2
-  width: 1080
+  index: /dev/video0
+  width: 1280
   height: 720
   fps: 30
   port: 8081
   format: MJPG
   calibration: /calibration/fisheye_calibration.npz
   calibration_type: fisheye
+  fisheye_balance: 1.0
+  fisheye_fov_scale: 1.0
   is_stereo: False
 # camera2:
 #   index: /home/mansour/Desktop/lane/fisheye_recording.mp4

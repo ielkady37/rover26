@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import os
+import logging
 import cv2
 import numpy as np
 from utils.Configurator import Configurator
 from cv.helpers.CVUtilities import CVUtilities
+
+
+logger = logging.getLogger(__name__)
 
 
 class PotholesDetector:
@@ -52,15 +56,36 @@ class PotholesDetector:
             When the calibration file is missing or cannot be loaded.
         """
         try:
-            if self._calib_path:
-                root = Configurator.getProjectRoot()
-                calib_abs = self._resolve_path(str(self._calib_path), root)
-                self._map1, self._map2 = CVUtilities.build_maps(
-                    calib_abs, self._balance, self._width, self._height
+            if not self._calib_path or str(self._calib_path).upper() == 'NONE':
+                raise RuntimeError('calibration path is not configured')
+
+            root = Configurator.getProjectRoot()
+            calib_abs = self._resolve_path(str(self._calib_path), root)
+
+            if not os.path.exists(calib_abs):
+                raise RuntimeError(f'calibration file not found: {calib_abs}')
+
+            self._map1, self._map2 = CVUtilities.build_maps(
+                calib_abs, self._balance, self._width, self._height
+            )
+
+            if self._map1 is None or self._map2 is None:
+                raise RuntimeError(
+                    f'failed to build calibration maps from: {calib_abs}'
                 )
+
             self._ready = True
+            logger.info(
+                'PotholesDetector calibration loaded successfully from %s '
+                '(size=%sx%s, balance=%.3f)',
+                calib_abs,
+                self._width,
+                self._height,
+                self._balance,
+            )
         except Exception as exc:
             self._ready = False
+            logger.error('PotholesDetector calibration load failed: %s', str(exc))
             raise RuntimeError(f'PotholesDetector.load failed: {exc}') from exc
 
     # ------------------------------------------------------------------
@@ -89,17 +114,18 @@ class PotholesDetector:
             return raw_frame, False, [], [], []
 
         try:
-            frame = (
-                cv2.remap(
-                    raw_frame, self._map1, self._map2,
-                    interpolation=cv2.INTER_LINEAR,
-                    borderMode=cv2.BORDER_CONSTANT,
-                )
-                if self._map1 is not None
-                else raw_frame.copy()
-            )
+            # frame = (
+            #     cv2.remap(
+            #         raw_frame, self._map1, self._map2,
+            #         interpolation=cv2.INTER_LINEAR,
+            #         borderMode=cv2.BORDER_CONSTANT,
+            #     )
+            #     if self._map1 is not None
+            #     else raw_frame.copy()
+            # )
+            frame = raw_frame.copy()
 
-            frame = cv2.resize(frame, (self._width, self._height))
+            # frame = cv2.resize(frame, (self._width, self._height))
 
             # --- Image enhancement ----------------------------------------
             lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)

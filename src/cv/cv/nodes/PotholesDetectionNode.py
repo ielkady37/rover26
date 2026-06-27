@@ -67,7 +67,7 @@ class PotholesDetectionNode(LifecycleNode):
             image_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
-                reliability=ReliabilityPolicy.BEST_EFFORT,
+                reliability=ReliabilityPolicy.RELIABLE,
             )
             result_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
@@ -76,7 +76,7 @@ class PotholesDetectionNode(LifecycleNode):
             )
             self._cam_sub = self.create_subscription(
                 Image,
-                f'/{self._cam_name}/uncalibrated',
+                f'/{self._cam_name}/calibrated',
                 self._on_frame,
                 image_qos,
             )
@@ -84,7 +84,7 @@ class PotholesDetectionNode(LifecycleNode):
                 PotholesDetectionResult, '/pothole_detection', result_qos
             )
             self._log.info(
-                f'PotholesDetectionNode: subscribed to /{self._cam_name}/uncalibrated'
+                f'PotholesDetectionNode: subscribed to /{self._cam_name}/calibrated'
             )
             return TransitionCallbackReturn.SUCCESS
         except Exception as exc:

@@ -2,7 +2,7 @@ camera_name: fisheye_camera
 balance: 0.0
 
 # Contour filter thresholds
-min_area: 150
+min_area: 100
 max_area: 60000
 min_circularity: 0.75
 min_aspect_ratio: 0.75
