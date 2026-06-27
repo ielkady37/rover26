@@ -16,8 +16,16 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
-        parameters=[{'robot_description': robot_desc}],
+        parameters=[{'robot_description': robot_desc, 'use_sim_time': False}],
         output='screen',
+    )
+
+    joint_state_publisher_node = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': False}],
     )
 
     # LiDAR — RPLidar C1 
@@ -32,6 +40,7 @@ def generate_launch_description():
             'frame_id': 'lidar_link',
             'angle_compensate': True,
             'scan_mode': 'Standard',
+            'use_sim_time': False,
         }],
         output='screen',
     )
@@ -91,24 +100,6 @@ def generate_launch_description():
         name="autonomous_navigation_node"
     )
 
-    # Manual Camera Streaming Node
-    manual_camera_streaming_node = Node(
-        package='cv',
-        executable='manual_camera_streaming_node',
-        output="screen",
-        emulate_tty=True,
-        name="manual_camera_streaming_node"
-    )
-
-    # Autonomous Camera Streaming Node
-    autonomous_camera_streaming_node = Node(
-        package='cv',
-        executable='autonomous_camera_streaming_node',
-        output="screen",
-        emulate_tty=True,
-        name="autonomous_camera_streaming_node"
-    )
-
     # Mission Manager Node
     mission_manager_node = Node(
         package='control',
@@ -127,10 +118,10 @@ def generate_launch_description():
         parameters=[{'port': 9090}]
     )
 
-
     return LaunchDescription([
         robot_state_publisher_node,
-        # sllidar_node,
+        joint_state_publisher_node,
+        sllidar_node,
         joystick_node,
         esp_bridge_node,
         hoverboard_node,
@@ -138,6 +129,4 @@ def generate_launch_description():
         autonomous_navigation_node,
         mission_manager_node,
         rosbridge_server_node,
-        manual_camera_streaming_node,
-        autonomous_camera_streaming_node,
     ])
