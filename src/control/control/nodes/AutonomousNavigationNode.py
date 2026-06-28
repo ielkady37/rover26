@@ -111,10 +111,10 @@ class AutonomousNavigationNode(LifecycleNode):
                 return
 
             act_msg = ActuatorCommand()
-            act_msg.m2_speed = float(cmd_dto.left_pwm)
+            act_msg.m2_speed = 5.0 * float(cmd_dto.left_pwm)
             act_msg.m2_dir   = int(cmd_dto.left_dir)
             act_msg.m2_brake = int(cmd_dto.left_brake)
-            act_msg.m1_speed = float(cmd_dto.right_pwm)
+            act_msg.m1_speed = 5.0 * float(cmd_dto.right_pwm)
             act_msg.m1_dir   = int(cmd_dto.right_dir)
             act_msg.m1_brake = int(cmd_dto.right_brake)
             act_msg.flash    = int(1)

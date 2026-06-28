@@ -75,11 +75,11 @@ slam_toolbox:
     # A new pose-graph node (keyframe) is only added when the robot has moved
     # this far since the last keyframe. Smaller = denser graph = more accurate
     # loop closures but more RAM/CPU. 0.2 m is a safe middle ground.
-    minimum_travel_distance: 0.2
+    minimum_travel_distance: 0.1
 
     # CHANGED: 0.5 → 0.2 rad (~11°)
     # Same idea but for heading change. Helps capture sharp turns more accurately.
-    minimum_travel_heading: 0.2
+    minimum_travel_heading: 0.1
 
     check_min_dist_and_heading_precisely: false
 

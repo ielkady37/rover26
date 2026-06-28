@@ -37,6 +37,7 @@ ROS2 parameters
 import math
 import threading
 
+# from build.interfaces.ament_cmake_python.interfaces.interfaces import msg
 import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
@@ -44,7 +45,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, NavSatFix, NavSatStatus
 from geometry_msgs.msg import Quaternion, TransformStamped
 from tf2_ros import TransformBroadcaster
-from interfaces.msg import EulerAngles, EncoderRevolutions, ActuatorCommand as ActuatorCommandMsg
+from interfaces.msg import EulerAngles, EncoderRevolutions, EncoderSpeeds, ActuatorCommand as ActuatorCommandMsg
 
 from control.services.ESPDataController import ESPDataController
 from control.services.UARTService import UARTService
@@ -175,6 +176,15 @@ class ESPBridgeNode(Node):
         self._timer = self.create_timer(1.0 / rate, self._timer_cb)
         self.get_logger().info(f"ESPBridgeNode running at {rate:.1f} Hz")
 
+        # latest encoder speeds cache — written by /encoders_speeds callback
+        self._latest_enc_speeds: EncoderSpeeds | None = None
+        self._enc_speeds_sub = self.create_subscription(
+            EncoderSpeeds,
+            "/encoders_speeds",
+            self._enc_speeds_cb,
+            10,
+        )
+
     # /esp_tx → actuator ESP32
 
     def _esp_tx_cb(self, msg: ActuatorCommandMsg) -> None:
@@ -261,6 +271,9 @@ class ESPBridgeNode(Node):
 
     # /encoders
 
+    def _enc_speeds_cb(self, msg: EncoderSpeeds) -> None:
+        self._latest_enc_speeds = msg
+
     def _publish_encoders(self, data: SensorData, stamp: Time) -> None:
         msg = EncoderRevolutions()
         msg.header.stamp    = stamp
@@ -307,49 +320,45 @@ class ESPBridgeNode(Node):
         odom_frame:   str   = self.get_parameter("odom_frame").value
         base_frame:   str   = self.get_parameter("base_frame").value
 
-        # Use IMU yaw directly as heading (degrees → radians).
-        # This avoids encoder-based heading drift.
-        imu_theta = math.radians(data.yaw)   # data.yaw is in [-180, 180] °
+        imu_theta = math.radians(data.yaw)
 
-        # Dead-reckoning: distance still comes from encoders, heading from IMU.
-        if self._prev_enc1 is None:
-            # first reading — seed without moving
-            self._prev_enc1 = data.enc1_net_rev
-            self._prev_enc2 = data.enc2_net_rev
+        if self._latest_enc_speeds is None:
+            self._theta = imu_theta
         else:
-            delta_left  = (data.enc1_net_rev - self._prev_enc1) * 2.0 * math.pi * wheel_radius
-            delta_right = (data.enc2_net_rev - self._prev_enc2) * 2.0 * math.pi * wheel_radius
-            self._prev_enc1 = data.enc1_net_rev
-            self._prev_enc2 = data.enc2_net_rev
+            now_sec = stamp.sec + stamp.nanosec * 1e-9
+            if self._prev_enc1 is None:
+                self._prev_enc1 = now_sec
+            else:
+                dt = now_sec - self._prev_enc1
+                self._prev_enc1 = now_sec
 
-            delta_dist = (delta_left + delta_right) * 0.5
+                if 0.0 < dt < 1.0:
+                    speed_r = float(self._latest_enc_speeds.motor1_speed)
+                    speed_l = float(self._latest_enc_speeds.motor2_speed)
 
-            # Integrate position using IMU heading at the midpoint of the step.
-            # Use the average of previous and current IMU theta to reduce error
-            # during fast turns.
-            mid_theta   = _wrap_angle(self._theta + _wrap_angle(imu_theta - self._theta) * 0.5)
-            self._x    += delta_dist * math.cos(mid_theta)
-            self._y    += delta_dist * math.sin(mid_theta)
+                    v_left  = speed_l * 2.0 * math.pi * wheel_radius / 1000.0
+                    v_right = speed_r * 2.0 * math.pi * wheel_radius / 1000.0
 
-        # Update stored heading from IMU (not accumulated encoder delta).
-        self._theta = imu_theta
+                    delta_dist = (v_left + v_right) * 0.5 * dt
 
-        # build Odometry message 
+                    mid_theta = _wrap_angle(self._theta + _wrap_angle(imu_theta - self._theta) * 0.5)
+                    self._x += delta_dist * math.cos(mid_theta)
+                    self._y += delta_dist * math.sin(mid_theta)
+
+            self._theta = imu_theta
+
         odom_quat = _yaw_to_quat(self._theta)
 
         msg = Odometry()
         msg.header.stamp    = stamp
         msg.header.frame_id = odom_frame
         msg.child_frame_id  = base_frame
-
         msg.pose.pose.position.x  = self._x
         msg.pose.pose.position.y  = self._y
         msg.pose.pose.position.z  = 0.0
         msg.pose.pose.orientation = odom_quat
-
         self._odom_pub.publish(msg)
 
-        # broadcast TF odom → base_link 
         tf = TransformStamped()
         tf.header.stamp            = stamp
         tf.header.frame_id         = odom_frame
