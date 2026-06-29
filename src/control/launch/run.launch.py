@@ -82,6 +82,14 @@ def generate_launch_description():
         }]
     )
 
+    #odometry publisher node
+    odom_publisher_node = Node(
+        package='control',
+        executable='odom_publisher_node',
+        output="screen",
+        name="odom_publisher_node"
+    )
+
     # Manual Navigation Node
     manual_navigation_node = Node(
         package='control',
@@ -121,6 +129,7 @@ def generate_launch_description():
     return LaunchDescription([
         robot_state_publisher_node,
         joint_state_publisher_node,
+        odom_publisher_node,
         sllidar_node,
         joystick_node,
         esp_bridge_node,

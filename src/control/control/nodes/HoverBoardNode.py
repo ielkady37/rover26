@@ -180,7 +180,7 @@ class HoverBoardNode(Node):
         msg = EncoderSpeeds()
         msg.header.stamp    = self.get_clock().now().to_msg()
         msg.header.frame_id = self.get_parameter("base_frame").value
-        msg.motor1_speed    = float(speed_r)
+        msg.motor1_speed    = -float(speed_r)
         msg.motor2_speed    = float(speed_l)
         self._encoder_pub.publish(msg)
 

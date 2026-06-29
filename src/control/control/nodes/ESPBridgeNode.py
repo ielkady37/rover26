@@ -241,7 +241,7 @@ class ESPBridgeNode(Node):
 
         stamp = self.get_clock().now().to_msg()
         self._publish_imu(data, stamp)
-        self._publish_odom(data, stamp)
+        # self._publish_odom(data, stamp) # old odometry publisher
         self._publish_euler(data, stamp)
         self._publish_encoders(data, stamp)
         self._publish_gps(data, stamp)
@@ -321,6 +321,11 @@ class ESPBridgeNode(Node):
         base_frame:   str   = self.get_parameter("base_frame").value
 
         imu_theta = math.radians(data.yaw)
+        # if you want to see the IMU angles in the log
+        self.get_logger().info(
+            f"yaw_deg={data.yaw:.2f}  pitch_deg={data.pitch:.2f}  roll_deg={data.roll:.2f}  "
+            f"imu_theta_rad={imu_theta:.3f}"
+        )
 
         if self._latest_enc_speeds is None:
             self._theta = imu_theta
