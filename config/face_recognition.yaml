@@ -1,6 +1,7 @@
 balance: 0.0
 similarity_threshold: 0.75
 yolo_model_path: /models/yolov8n.pt
-target_img_path: /targets/T1.jpg
+extractor_model_path: /models/osnet_ain_x1_0_imagenet.pth
+target_img_path: /targets/T8.jpg
 use_gpu: true
 camera_name: fisheye_camera
