@@ -13,6 +13,8 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.py')),
+        ('share/' + package_name + '/config', glob('config/*.yaml')),
+        (os.path.join('share', package_name, 'database'), glob('control/database/*.json')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -34,6 +36,7 @@ setup(
             'autonomous_navigation_node = control.nodes.AutonomousNavigationNode:main',
             'mission_manager_node = control.nodes.MissionManagerNode:main',
             'hoverboard_node      = control.nodes.HoverBoardNode:main',
+            "camera_control_server = control.API.ControlServer:main",
         ],
     },
 )

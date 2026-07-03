@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from std_msgs.msg import Float32MultiArray
 import time
 
 from interfaces.msg import ActuatorCommand
@@ -9,28 +10,29 @@ from interfaces.msg import EulerAngles
 from control.services.Navigation import Navigation
 from control.services.PID import PIDController
 from control.services.Joystick import CJoystick
-from utils.Configurator import Configurator
-from utils.Logger import RoverLogger
+from utils.utils.Configurator import Configurator
+from utils.utils.Logger import RoverLogger
 
 class ManualNavigationNode(LifecycleNode):
 
     def __init__(self):
         super().__init__('manual_navigation_node')
         self._log = RoverLogger()
-        
+
         self.control_timer = None
-        self.latest_yaw = 0.0 
+        self.latest_yaw = 0.0
         self.last_time = time.time()
         self.joystick = None
         self.deadzone = 0.0
         self._flash_state = 0
         self._last_flash_toggle = 0.0
+        self.constants_sub = self.create_subscription(Float32MultiArray, "/constants", self.constantsCallback, 10)
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring ManualNavigationNode...")
         try:
             conf = Configurator()
-            
+
             locomotion_data = conf.fetchData(Configurator.LOCOMOTION)
             if not locomotion_data:
                 self._log.warn("locomotion.yaml not found! Using defensive fallbacks.")
@@ -43,16 +45,16 @@ class ManualNavigationNode(LifecycleNode):
             pid_data = conf.fetchData(Configurator.PID_PARAMS)
             if not pid_data:
                 pid_data = {}
-                
+
             kp = float(pid_data.get('yaw_KP', 0.0))
             ki = float(pid_data.get('yaw_KI', 0.0))
             kd = float(pid_data.get('yaw_KD', 0.0))
-
+            
             # Initialize Services
             self.pid = PIDController(kp=kp, ki=ki, kd=kd)
             self.navigation_service = Navigation(deadzone=self.deadzone, max_pwm=max_pwm)
-            
-            self.joystick = CJoystick(is_writer=False) 
+
+            self.joystick = CJoystick(is_writer=False)
 
             # Setup Publishers & Subscribers
             motor_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -64,11 +66,11 @@ class ManualNavigationNode(LifecycleNode):
             # Setup Timer
             timer_period = 1.0 / loop_rate
             self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
-            self.control_timer.cancel() 
+            self.control_timer.cancel()
 
-            self._log.succ("ManualNavigationNode configured successfully from YAML.")
+            self._log.info("ManualNavigationNode configured successfully from YAML.")
             return TransitionCallbackReturn.SUCCESS
-            
+
         except Exception as e:
             self._log.err(f"Configuration failed: {e}")
             return TransitionCallbackReturn.FAILURE
@@ -77,14 +79,14 @@ class ManualNavigationNode(LifecycleNode):
         self._log.info("Activating Manual Navigation...")
         super().on_activate(state)
         self.last_time = time.time()
-        self.control_timer.reset() 
+        self.control_timer.reset()
         return TransitionCallbackReturn.SUCCESS
 
     def on_deactivate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Deactivating Manual Navigation...")
         super().on_deactivate(state)
-        self.control_timer.cancel() 
-        self.publish_safe_stop()    
+        self.control_timer.cancel()
+        self.publish_safe_stop()
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -102,11 +104,16 @@ class ManualNavigationNode(LifecycleNode):
 
     def euler_callback(self, msg: EulerAngles):
         try:
-            if msg.yaw != msg.yaw: 
+            if msg.yaw != msg.yaw:
                 return
             self.latest_yaw = msg.yaw
         except Exception as e:
             self._log.err(f"Error processing /euler callback: {e}")
+
+    def constantsCallback(self, msg: Float32MultiArray):
+        self._log.warn(f"[CONSTANTS] Received {len(msg.data)} values: {list(msg.data)}")
+        self.pid.update_constants(msg.data[0], msg.data[1], msg.data[2])
+        self._logger.info(f"[CONSTANTS] PID constants updated: KP={self.pid.kp}, KI={self.pid.ki}, KD={self.pid.kd}")
 
     def control_loop_callback(self):
         try:
@@ -119,13 +126,13 @@ class ManualNavigationNode(LifecycleNode):
                 self._last_flash_toggle = current_time
 
             axes = self.joystick.getAxis()
-            
+
             r2 = axes.get("r2_axis", 0.0)  # Gas
             l2 = axes.get("l2_axis", 0.0)  # Brake/Reverse
-            
+
             # Final throttle: Positive -> forward, negative -> reverse
             throttle = r2 - l2
-            
+
             # L3 Steering (Left Stick X-Axis)
             yaw = axes.get("left_x_axis", 0.0)
 

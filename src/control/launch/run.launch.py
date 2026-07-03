@@ -122,6 +122,13 @@ def generate_launch_description():
         name="mission_manager_node"
     )
 
+    camera_control_server = Node(
+        package="control",
+        executable="camera_control_server",
+        name="camera_control_server",
+        output="screen",
+    )
+
     # ROSBridge WebSocket Server
     rosbridge_server_node = Node(
         package='rosbridge_server',
@@ -143,4 +150,5 @@ def generate_launch_description():
         autonomous_navigation_node,
         mission_manager_node,
         rosbridge_server_node,
+        camera_control_server,
     ])
