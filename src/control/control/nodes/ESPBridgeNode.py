@@ -204,10 +204,10 @@ class ESPBridgeNode(Node):
             servo=float(msg.servo),
         )
         if not self._actuator_ready:
-            self.get_logger().warn(
-                "Actuator write skipped — UART not available.",
-                throttle_duration_sec=5.0,
-            )
+            # self.get_logger().warn(
+            #     "Actuator write skipped — UART not available.",
+            #     throttle_duration_sec=5.0,
+            # )
             return
         try:
             self._actuator_ctrl.write(cmd)

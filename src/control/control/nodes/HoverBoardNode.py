@@ -52,36 +52,33 @@ class HoverBoardNode(Node):
         self.declare_parameter("max_speed",   500)
         self.declare_parameter("base_frame",  "base_link")
         self.declare_parameter("read_hz",     100)      # how often to poll serial RX
+        self.declare_parameter("rotation_boost", 2.0)      # multiplier applied to steer when rotating in place
+        self.declare_parameter("rotation_deadband", 0.02)  # ignore tiny opposite-sign noise near zero
+        self.declare_parameter("reconnect_interval_sec", 2.0)  # min time between reconnect attempts
 
-        uart_port  = self.get_parameter("uart_port").value
-        baudrate   = self.get_parameter("baudrate").value
+        self._uart_port  = self.get_parameter("uart_port").value
+        self._baudrate   = self.get_parameter("baudrate").value
         self._max_speed  = int(self.get_parameter("max_speed").value)
         read_hz    = int(self.get_parameter("read_hz").value)
+        self._rotation_boost    = float(self.get_parameter("rotation_boost").value)
+        self._rotation_deadband = float(self.get_parameter("rotation_deadband").value)
+        self._reconnect_interval = float(self.get_parameter("reconnect_interval_sec").value)
         self._logger = RoverLogger(self)
 
-        if not uart_port:
+        if not self._uart_port:
             self._logger.err("Parameter 'uart_port' is required.")
             raise RuntimeError("uart_port parameter is required")
 
-        # ── serial port: timeout=0 → non-blocking reads ──────────────────
-        try:
-            self._serial = serial.Serial(
-                port=uart_port,
-                baudrate=baudrate,
-                timeout=0,          # non-blocking: returns immediately with whatever is in buffer
-                write_timeout=0.05,
-                dsrdtr=False,
-                rtscts=False,
-            )
-            time.sleep(3.0)
-            self._serial.reset_input_buffer()
-            self._serial.reset_output_buffer()
-        except Exception as e:
-            self._logger.err(f"Failed to open {uart_port}: {e}")
-            raise
+        # ── connection state ──────────────────────────────────────────────
+        self._serial: serial.Serial | None = None
+        self._connected: bool = False
+        self._last_reconnect_attempt: float = 0.0
 
         # ── accumulation buffer for partial frames ───────────────────────
         self._rx_buf = bytearray()
+
+        # ── initial connection (raises on total failure, same as before) ──
+        self._open_serial(initial=True)
 
         # ── publisher + subscriber ───────────────────────────────────────
         self._encoder_pub = self.create_publisher(EncoderSpeeds, "/encoders_speeds", 10)
@@ -93,18 +90,57 @@ class HoverBoardNode(Node):
         self._read_timer = self.create_timer(1.0 / read_hz, self._read_tick)
 
         self._logger.info(
-            f"HoverBoardNode started — port={uart_port} baud={baudrate} "
+            f"HoverBoardNode started — port={self._uart_port} baud={self._baudrate} "
             f"max_speed={self._max_speed} read_hz={read_hz}"
         )
+
+    # ── connection management ──────────────────────────────────────────
+
+    def _open_serial(self, initial: bool = False) -> None:
+        """(Re)open the serial port. Raises on failure — caller decides how to handle."""
+        if self._serial is not None:
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+
+        self._serial = serial.Serial(
+            port=self._uart_port,
+            baudrate=self._baudrate,
+            timeout=0,          # non-blocking: returns immediately with whatever is in buffer
+            write_timeout=0.05,
+            dsrdtr=False,
+            rtscts=False,
+        )
+        # Cold boot needs longer settle time for the hoverboard firmware to
+        # come up; reconnects (device was already running) can be quicker.
+        time.sleep(3.0)
+        self._serial.reset_input_buffer()
+        self._serial.reset_output_buffer()
+        self._rx_buf = bytearray()
+        self._connected = True
+        self._logger.info(f"Hoverboard UART connected on {self._uart_port}")
+
+    def _try_reconnect(self) -> None:
+        """Rate-limited reconnect attempt — call from any failure path."""
+        self._connected = False
+        now = time.time()
+        if now - self._last_reconnect_attempt < self._reconnect_interval:
+            return  # too soon since last attempt, skip
+        self._last_reconnect_attempt = now
+        try:
+            self._open_serial(initial=False)
+        except Exception as e:
+            self._logger.warn(f"Reconnect failed: {e}")
 
     # ── command callback: fires immediately on message receipt ───────────
 
     def _cmd_cb(self, msg: ActuatorCommandMsg) -> None:
-        # self._logger.info(
-        #     f"Received ActuatorCommand: m1_speed={msg.m1_speed} m1_dir={msg.m1_dir} "
-        #     f"m1_brake={msg.m1_brake} m2_speed={msg.m2_speed} m2_dir={msg.m2_dir} "
-        #     f"m2_brake={msg.m2_brake}"
-        # )
+        if not self._connected:
+            # Drop commands silently while disconnected rather than
+            # attempting a doomed write on every incoming message.
+            return
+
         left  = max(0.0, min(1.0, float(msg.m1_speed) / 255.0))
         right = max(0.0, min(1.0, float(msg.m2_speed) / 255.0))
 
@@ -118,26 +154,50 @@ class HoverBoardNode(Node):
         if msg.m2_brake == 1:
             right = 0.0
 
-        speed = int(-((left + right) / 2.0) * self._max_speed)
-        steer = int(((left - right) / 2.0) * self._max_speed)
-        # self._logger.info(f"Received command: left={left:.2f} right={right:.2f} → speed={speed} steer={steer}")
+        eps = self._rotation_deadband
+        is_rotation = (left > eps and right < -eps) or (left < -eps and right > eps)
+
+        if is_rotation:
+            # Motors point opposite directions → pure spin-in-place.
+            # Route everything through steer with its own boosted scale
+            # instead of splitting it with speed, so rotation isn't
+            # throttled down to the same limit as forward/backward motion.
+            speed = 0
+            steer = int(((left - right) / 2.0) * self._max_speed * self._rotation_boost)
+        else:
+            speed = int(-((left + right) / 2.0) * self._max_speed)
+            steer = int(((left - right) / 2.0) * self._max_speed)
 
         try:
             self._serial.write(_build_tx_frame(steer, speed))
         except Exception as e:
-            self._logger.warn(
-                f"Hoverboard write failed: {e}"
-            )
+            self._logger.warn(f"Hoverboard write failed: {e}")
+            self._try_reconnect()
 
     # ── timer tick: drain whatever bytes arrived since last tick ─────────
 
     def _read_tick(self) -> None:
+        if not self._connected:
+            self._try_reconnect()
+            return
+
         # Non-blocking: read everything currently in the OS buffer
-        waiting = self._serial.in_waiting
+        try:
+            waiting = self._serial.in_waiting
+        except Exception as e:
+            self._logger.warn(f"Serial read error: {e}")
+            self._try_reconnect()
+            return
+
         if waiting == 0:
             return
 
-        self._rx_buf.extend(self._serial.read(waiting))
+        try:
+            self._rx_buf.extend(self._serial.read(waiting))
+        except Exception as e:
+            self._logger.warn(f"Serial read error: {e}")
+            self._try_reconnect()
+            return
 
         # Consume as many complete frames as are available
         while len(self._rx_buf) >= _RX_SIZE:
@@ -188,7 +248,8 @@ class HoverBoardNode(Node):
 
     def destroy_node(self) -> None:
         try:
-            self._serial.close()
+            if self._serial is not None:
+                self._serial.close()
         except Exception:
             pass
         super().destroy_node()

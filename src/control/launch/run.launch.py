@@ -35,7 +35,7 @@ def generate_launch_description():
         executable='sllidar_node',
         name='sllidar_node',
         parameters=[{
-            'serial_port': '/dev/ttyUSB1',
+            'serial_port': '/dev/rover_lidar',
             'serial_baudrate': 460800,
             'frame_id': 'lidar_link',
             'angle_compensate': True,
@@ -62,7 +62,7 @@ def generate_launch_description():
         name="esp_bridge_node",
         parameters=[{
             'base_frame': 'base_footprint',
-            'sensor_port': '/dev/ttyUSB0',
+            'sensor_port': '/dev/rover_esp_sensor',
             'actuator_port': '/dev/ttyUSB3',
         }]
     )
@@ -74,7 +74,7 @@ def generate_launch_description():
         output="screen",
         name="hoverboard_node",
         parameters=[{
-            'uart_port': '/dev/ttyUSB2',
+            'uart_port': '/dev/rover_hoverboard',
             'baudrate': 115200,
             'timeout': 0.1,
             'max_speed': 200,
@@ -87,7 +87,12 @@ def generate_launch_description():
         package='control',
         executable='odom_publisher_node',
         output="screen",
-        name="odom_publisher_node"
+        name="odom_publisher_node",
+        parameters=[{
+            'wheel_radius': 0.075,
+            'odom_frame': 'odom',
+            'base_frame': 'base_footprint',
+        }]
     )
 
     # Manual Navigation Node

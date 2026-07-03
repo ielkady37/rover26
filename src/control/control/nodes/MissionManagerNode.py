@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rclpy
+import math
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.task import Future
@@ -18,6 +19,10 @@ import time
 from control.services.MissionManager import MissionManager, Phase, VisionState
 from utils.Configurator import Configurator
 from utils.Logger import RoverLogger
+
+def _yaw_to_quat(yaw: float):
+    half = yaw * 0.5
+    return math.sin(half), math.cos(half)  # (z, w)
 
 class MissionManagerNode(Node):
     """
@@ -235,8 +240,9 @@ class MissionManagerNode(Node):
         goal_msg.pose.pose.position.y = float(wp.get('y', 0.0))
         
         yaw = float(wp.get('yaw', 0.0))
-        goal_msg.pose.pose.orientation.z = yaw 
-        goal_msg.pose.pose.orientation.w = 1.0
+        qz, qw = _yaw_to_quat(yaw)
+        goal_msg.pose.pose.orientation.z = qz
+        goal_msg.pose.pose.orientation.w = qw
 
         self._log.info(f"Dispatching Nav2 Goal -> {wp.get('id')}: X:{goal_msg.pose.pose.position.x}, Y:{goal_msg.pose.pose.position.y}")
         
