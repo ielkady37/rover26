@@ -164,7 +164,8 @@ class RoverLogger:
         # --- Console ---
         print(
             f"{level.color}{_BOLD}[{level.label}]{_RESET}"
-            f"{level.color} {ts} | {class_name:>28} | {message}{_RESET}"
+            f"{level.color} {ts} | {class_name:>28} | {message}{_RESET}",
+            flush=True,
         )
 
         # --- File ---

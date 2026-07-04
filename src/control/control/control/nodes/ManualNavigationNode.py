@@ -44,7 +44,7 @@ class ManualNavigationNode(LifecycleNode):
             if not pid_data:
                 pid_data = {}
                 
-            kp = float(pid_data.get('yaw_KP', 0.0))
+            kp = float(pid_data.get('yaw_KP', 0.8))
             ki = float(pid_data.get('yaw_KI', 0.0))
             kd = float(pid_data.get('yaw_KD', 0.0))
 

@@ -67,7 +67,7 @@ class ESPBridgeNode(Node):
         self.declare_parameter("actuator_port",    "/dev/ttyUSB1")
         self.declare_parameter("actuator_baudrate", 115200)
         self.declare_parameter("uart_timeout",     0.2)
-        self.declare_parameter("wheel_radius", 0.05)
+        self.declare_parameter("wheel_radius", 0.075)
         self.declare_parameter("wheel_base",   0.30)
         self.declare_parameter("publish_rate", 100.0)
         self.declare_parameter("imu_frame",    "imu_link")

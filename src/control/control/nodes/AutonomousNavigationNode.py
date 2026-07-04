@@ -42,6 +42,7 @@ class AutonomousNavigationNode(LifecycleNode):
             deadzone = float(kin_data.get('deadzone', 0.0))
             self.watchdog_timeout = float(kin_data.get('watchdog_timeout_sec', 0.5))
             max_pwm = int(kin_data.get('max_pwm', 255))
+            self.rotation_gain = float(kin_data.get('rotation_gain', 2.0))
 
             # 2. Initialize Services
             self.kinematics = Kinematics(
@@ -100,8 +101,8 @@ class AutonomousNavigationNode(LifecycleNode):
         try:
             self.last_cmd_time = time.time()
 
-            linear_x = msg.linear.x
-            angular_z = msg.angular.z
+            linear_x = msg.linear.x * 0.8 
+            angular_z = msg.angular.z * self.rotation_gain  # Apply rotation gain for responsiveness
 
             left_norm, right_norm = self.kinematics.calculate_wheel_speeds(linear_x, angular_z)
             cmd_dto = self.navigation_service.calculate_from_wheel_speeds(left_norm, right_norm)
@@ -111,10 +112,10 @@ class AutonomousNavigationNode(LifecycleNode):
                 return
 
             act_msg = ActuatorCommand()
-            act_msg.m2_speed = 5.0 * float(cmd_dto.left_pwm)
+            act_msg.m2_speed = 4.0 * float(cmd_dto.left_pwm)
             act_msg.m2_dir   = int(cmd_dto.left_dir)
             act_msg.m2_brake = int(cmd_dto.left_brake)
-            act_msg.m1_speed = 5.0 * float(cmd_dto.right_pwm)
+            act_msg.m1_speed = 4.0 * float(cmd_dto.right_pwm)
             act_msg.m1_dir   = int(cmd_dto.right_dir)
             act_msg.m1_brake = int(cmd_dto.right_brake)
             act_msg.flash    = int(1)

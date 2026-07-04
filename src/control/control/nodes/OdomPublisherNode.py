@@ -53,14 +53,14 @@ def _wrap_angle(angle: float) -> float:
 
 
 # Calibrate against real hardware: drive a known distance and adjust.
-_ENC_SPEED_SCALE: float = 1.0 / 1000.0
+_ENC_SPEED_SCALE: float = 0.018
 
 
 class OdomPublisherNode(Node):
     def __init__(self) -> None:
         super().__init__("odom_publisher_node")
 
-        self.declare_parameter("wheel_radius", 0.05)
+        self.declare_parameter("wheel_radius", 0.075)
         self.declare_parameter("odom_frame",   "odom")
         self.declare_parameter("base_frame",   "base_link")
 

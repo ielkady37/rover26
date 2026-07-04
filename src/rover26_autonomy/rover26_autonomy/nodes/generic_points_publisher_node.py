@@ -6,35 +6,41 @@ generic_points_publisher_node.py  —  rover26_autonomy
 FUNCTIONALITY
 ─────────────
 Converts lane polynomial detections from lane_detection_node into ground-plane
-point clouds and synthetic LaserScans for Nav2 integration. Publishes detected
-lane edges as RViz visualization markers and a synthetic /detection/scan that
-can be fused with real LiDAR by slam_toolbox's scan_merger.
+point clouds and a synthetic LaserScan for Nav2 integration. Publishes detected
+lane edges as RViz visualization markers and a synthetic /detection/scan meant
+to be added as a SECOND observation source on Nav2's local costmap (alongside
+the real LiDAR /scan) — not merged into a single scan topic.
 
 PIPELINE (per cycle):
-  1. Cache latest LaneStatus message (polynomial coefficients)
-  2. Sample polynomial at regular intervals to produce ground-plane points
+  1. Cache latest LaneDetectionResult message (polynomial coefficients)
+  2. Sample polynomial(s) at regular intervals to produce ground-plane points
   3. On SCAN_HZ timer: publish synthetic LaserScan (/detection/scan)
   4. On MARKER_HZ timer: publish RViz markers and PointCloud2 for debug
 
 Key Design:
-  • Scan published at constant SCAN_HZ rate (20 Hz) to prevent scan_merger starvation
-  • Markers/clouds published at lower MARKER_HZ rate (5 Hz) for bandwidth efficiency
-  • Published in LIDAR_FRAME so scan_merger can fuse with hardware /scan
+  • Scan published at constant SCAN_HZ rate (20 Hz) so a downstream consumer
+    (e.g. Nav2's local costmap obstacle layer) is never starved.
+  • Markers/clouds published at lower MARKER_HZ rate (5 Hz) for bandwidth efficiency.
+  • Published in LIDAR_FRAME so it lines up with the real /scan when both are
+    added as observation sources on the same costmap.
+  • Publishes whichever lane side IS currently detected — does not require
+    both sides to be present. A side with fewer than 3 coefficients is
+    treated as "not detected" and simply contributes no points this cycle.
 
 TOPICS & SUBSCRIPTIONS
 ──────────────────────
 Subscribed:
-  • /lane_status  [rover26/LaneStatus]     ← lane_detection_node
+  • /lane_detection  [interfaces/LaneDetectionResult]  ← lane_detection_node
 
 Published:
-  • /detection/scan     [sensor_msgs/LaserScan]         → slam_toolbox scan_merger (SCAN_HZ)
+  • /detection/scan     [sensor_msgs/LaserScan]         → Nav2 local costmap (2nd observation source)
   • /detection/markers  [visualization_msgs/MarkerArray] → RViz (MARKER_HZ)
   • /detection/points   [sensor_msgs/PointCloud2]       → RViz (MARKER_HZ)
 
 TF FRAMES
 ─────────
-Input frame:  N/A (LaneStatus contains relative polynomials in bird's-eye space)
-Output frame: lidar_link (for /detection/scan — fuses with hardware LiDAR)
+Input frame:  N/A (LaneDetectionResult contains relative polynomials in bird's-eye space)
+Output frame: lidar_link (for /detection/scan — aligns with hardware LiDAR)
               base_footprint (for markers/points — RViz visualization)
 
 PARAMETERS (from config_params.py)
@@ -58,7 +64,7 @@ from sensor_msgs.msg import PointCloud2, PointField, LaserScan
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import ColorRGBA
 
-from rover26.msg import LaneStatus
+from interfaces.msg import LaneDetectionResult
 
 # All tunable constants come from the master config — no magic numbers here.
 from rover26_autonomy.config_params import IMG_W, IMG_H, LanePublisher, Physical, RosTopics
@@ -93,35 +99,38 @@ def pixel_to_ground(px: float, py: float) -> tuple[float, float]:
     return x_forward, y_left
 
 
-def handle_lane(msg: LaneStatus) -> list[DetectionPoint]:
+def handle_lane(msg: LaneDetectionResult) -> list[DetectionPoint]:
     """
-    Convert polynomial lane coefficients from a LaneStatus message into a list
-    of DetectionPoints in base_footprint ground coordinates.
+    Convert polynomial lane coefficients from a LaneDetectionResult message
+    into a list of DetectionPoints in base_footprint ground coordinates.
+
+    A side is treated as "not detected" if its coeff list isn't length 3 —
+    lane_detection_node is expected to publish [] for a side it couldn't fit.
+    Publishes whichever side IS available; does not require both.
     """
     points = []
-    if not (msg.left_detected and msg.right_detected):
-        return points
 
-    # Require exactly 3 coefficients (quadratic polynomial)
-    left_c  = np.array(msg.left_coeffs)  if len(msg.left_coeffs)  == 3 else None
-    right_c = np.array(msg.right_coeffs) if len(msg.right_coeffs) == 3 else None
+    left_c  = np.array(msg.left_lane_coeffs)  if len(msg.left_lane_coeffs)  == 3 else None
+    right_c = np.array(msg.right_lane_coeffs) if len(msg.right_lane_coeffs) == 3 else None
 
-    if left_c is None or right_c is None:
+    if left_c is None and right_c is None:
         return points
 
     # Sample evenly along the image height (skip top 15% and bottom 10%
     # to avoid warp distortion near the horizon and rover body)
-    # Note: the lane detection node already applies a mask to ignore these regions,
+    # Note: the lane detection node already applies a mask to ignore these regions.
     y_vals = np.linspace(0, IMG_H, LanePublisher.N_LANE_SAMPLES)
 
     def process_side(coeffs, side: str):
+        if coeffs is None:
+            return
         x_vals = np.polyval(coeffs, y_vals)
         for px, py in zip(x_vals, y_vals):
             if not (0 <= px < IMG_W):
                 continue
             x_fwd, y_lat = pixel_to_ground(px, py)
             # Small 0.12 m longitudinal offset places the lane origin just
-            # ahead of the rover's footprint to avoid self-occlusion in SLAM.
+            # ahead of the rover's footprint to avoid self-occlusion.
             points.append(DetectionPoint(
                 x=x_fwd + 0.12,
                 y=y_lat,
@@ -139,15 +148,15 @@ def handle_lane(msg: LaneStatus) -> list[DetectionPoint]:
 
 class GenericPointsPublisher(Node):
     """
-    Bridges lane detection output to SLAM and RViz.
+    Bridges lane detection output to Nav2's costmap and RViz.
 
-    Subscribes to /lane_status and publishes:
-      • /detection/scan    (LaserScan,   LIDAR_FRAME, SCAN_HZ)   — for slam_toolbox
+    Subscribes to /lane_detection and publishes:
+      • /detection/scan    (LaserScan,   LIDAR_FRAME, SCAN_HZ)   — 2nd costmap observation source
       • /detection/points  (PointCloud2, ROBOT_FRAME, MARKER_HZ) — for RViz debugging
       • /detection/markers (MarkerArray, ROBOT_FRAME, MARKER_HZ) — for RViz debugging
 
-    The scan is published on a fast timer so the dual_laser_merger is never
-    starved between lane detection frames (which may arrive at a lower rate).
+    The scan is published on a fast timer so the costmap's obstacle layer is
+    never starved between lane detection frames (which may arrive at a lower rate).
     """
 
     def __init__(self):
@@ -163,7 +172,7 @@ class GenericPointsPublisher(Node):
         self._scan_pub_count = 0
 
         # ── Publishers ────────────────────────────────────────────────────────
-        # LaserScan uses RELIABLE QoS so the scan_merger never drops a frame.
+        # LaserScan uses RELIABLE QoS so the costmap never drops a frame.
         scan_qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
@@ -174,14 +183,15 @@ class GenericPointsPublisher(Node):
         self._pub_scan    = self.create_publisher(LaserScan,   RosTopics.LANE_SCAN,    scan_qos)
 
         # ── Subscription ──────────────────────────────────────────────────────
-        # BEST_EFFORT to match the lane_detection_node publisher and avoid
-        # QoS incompatibility warnings.
+        # RELIABLE to match lane_detection_node's /lane_detection publisher.
         lane_qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=15
         )
-        self.create_subscription(LaneStatus, RosTopics.LANE_STATUS, self._lane_callback, lane_qos)
+        self.create_subscription(
+            LaneDetectionResult, RosTopics.LANE_DETECTION, self._lane_callback, lane_qos
+        )
 
         # ── Timers ────────────────────────────────────────────────────────────
         # Fast timer: publishes /detection/scan at SCAN_HZ even between frames.
@@ -191,16 +201,16 @@ class GenericPointsPublisher(Node):
         # Diagnostic timer: logs actual Hz every 5 s.
         self.create_timer(5.0, self._log_rates)
 
-        # self.get_logger().info(
-        #     f'Generic Points Publisher started — '
-        #     f'scan: {LanePublisher.SCAN_HZ} Hz ({LanePublisher.LIDAR_FRAME}) | '
-        #     f'markers/cloud: {LanePublisher.MARKER_HZ} Hz ({LanePublisher.ROBOT_FRAME})'
-        # )
+        self.get_logger().info(
+            f'Generic Points Publisher started — '
+            f'scan: {LanePublisher.SCAN_HZ} Hz ({LanePublisher.LIDAR_FRAME}) | '
+            f'markers/cloud: {LanePublisher.MARKER_HZ} Hz ({LanePublisher.ROBOT_FRAME})'
+        )
 
     # ── Callbacks & timers ────────────────────────────────────────────────────
 
-    def _lane_callback(self, msg: LaneStatus):
-        """Convert incoming LaneStatus polynomials to ground points and cache them."""
+    def _lane_callback(self, msg: LaneDetectionResult):
+        """Convert incoming LaneDetectionResult polynomials to ground points and cache them."""
         try:
             self._latest_points = handle_lane(msg)
             self._lane_msg_count += 1
@@ -211,7 +221,8 @@ class GenericPointsPublisher(Node):
         """
         Publish /detection/scan at SCAN_HZ from the cached point list.
 
-        Always publishes (even when empty) so the scan_merger is never starved.
+        Always publishes (even when empty) so a downstream consumer relying
+        on a steady rate is never starved.
         """
         stamp = self.get_clock().now().to_msg()
         self._pub_scan.publish(self._build_laser_scan(self._latest_points, stamp))
@@ -229,11 +240,11 @@ class GenericPointsPublisher(Node):
 
     def _log_rates(self):
         """Log actual publish rates every 5 s to catch timer drift early."""
-        # self.get_logger().info(
-        #     f'/lane_status in:       {self._lane_msg_count / 5.0:.1f} Hz | '
-        #     f'/detection/scan out:   {self._scan_pub_count / 5.0:.1f} Hz '
-        #     f'(target {LanePublisher.SCAN_HZ} Hz)'
-        # )
+        self.get_logger().info(
+            f'/lane_detection in:    {self._lane_msg_count / 5.0:.1f} Hz | '
+            f'/detection/scan out:   {self._scan_pub_count / 5.0:.1f} Hz '
+            f'(target {LanePublisher.SCAN_HZ} Hz)'
+        )
         self._lane_msg_count = 0
         self._scan_pub_count = 0
 
@@ -243,10 +254,10 @@ class GenericPointsPublisher(Node):
         """
         Build a full-circle LaserScan from ground DetectionPoints.
 
-        Published in LIDAR_FRAME so the scan_merger can fuse it with the
-        physical /scan without a frame mismatch.
+        Published in LIDAR_FRAME so it aligns with the physical /scan when
+        both are used as observation sources on the same costmap.
         Each angular bin keeps only the closest point (nearest-wins).
-        Empty bins are set to inf so the merger drops them cleanly.
+        Empty bins are set to inf so the costmap drops them cleanly.
         """
         scan = LaserScan()
         scan.header.stamp    = stamp
@@ -261,7 +272,7 @@ class GenericPointsPublisher(Node):
         scan.range_min      = 0.1
         scan.range_max      = 12.0
 
-        # Initialise all bins to infinity (merger drops inf ranges when use_inf=False)
+        # Initialise all bins to infinity (costmap drops inf ranges when use_inf=False)
         scan.ranges      = [float('inf')] * LanePublisher.N_SCAN_BINS
         scan.intensities = [0.0]         * LanePublisher.N_SCAN_BINS
 
@@ -271,7 +282,7 @@ class GenericPointsPublisher(Node):
                 continue
 
             # Convert (x_forward, y_left) to a bearing angle, then to a bin index
-            angle = math.atan2(p.y, p.x)  
+            angle = math.atan2(p.y, p.x)
             idx   = int((angle - scan.angle_min) / scan.angle_increment)
             idx   = max(0, min(idx, LanePublisher.N_SCAN_BINS - 1))
 
