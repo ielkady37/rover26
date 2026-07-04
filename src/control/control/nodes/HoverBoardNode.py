@@ -44,6 +44,18 @@ def _parse_rx_frame(data: bytes) -> tuple[int, int] | None:
 
 
 class HoverBoardNode(Node):
+    """
+    NOTE ON PROTOCOL: the hoverboard firmware (hoverboard-firmware-hack-FOC)
+    requires a valid frame roughly every 100ms or it cuts power to the
+    motors and beeps 3x to indicate "powered, no valid commands". This node
+    therefore sends a HEARTBEAT frame on a fixed timer, always re-sending the
+    most recently computed steer/speed — it does NOT only send on new
+    /esp_tx messages. Relying solely on /esp_tx arrival is what causes the
+    board to sit there beeping whenever no new command happens to arrive
+    (e.g. idle robot, no joystick/nav2 activity): the firmware's own
+    heartbeat requirement is never satisfied.
+    """
+
     def __init__(self) -> None:
         super().__init__("hoverboard_node")
 
@@ -52,17 +64,24 @@ class HoverBoardNode(Node):
         self.declare_parameter("max_speed",   500)
         self.declare_parameter("base_frame",  "base_link")
         self.declare_parameter("read_hz",     100)      # how often to poll serial RX
+        self.declare_parameter("send_hz",     10)       # heartbeat send rate — must stay
+                                                          # near the firmware's ~100ms requirement
         self.declare_parameter("rotation_boost", 2.0)      # multiplier applied to steer when rotating in place
         self.declare_parameter("rotation_deadband", 0.02)  # ignore tiny opposite-sign noise near zero
         self.declare_parameter("reconnect_interval_sec", 2.0)  # min time between reconnect attempts
+        self.declare_parameter("cmd_watchdog_sec", 1.0)   # zero out motors if no /esp_tx for this long
+        self.declare_parameter("max_reconnect_attempts", 10)  # give up after this many consecutive failures
 
         self._uart_port  = self.get_parameter("uart_port").value
         self._baudrate   = self.get_parameter("baudrate").value
         self._max_speed  = int(self.get_parameter("max_speed").value)
         read_hz    = int(self.get_parameter("read_hz").value)
+        send_hz    = int(self.get_parameter("send_hz").value)
         self._rotation_boost    = float(self.get_parameter("rotation_boost").value)
         self._rotation_deadband = float(self.get_parameter("rotation_deadband").value)
         self._reconnect_interval = float(self.get_parameter("reconnect_interval_sec").value)
+        self._cmd_watchdog_sec = float(self.get_parameter("cmd_watchdog_sec").value)
+        self._max_reconnect_attempts = int(self.get_parameter("max_reconnect_attempts").value)
         self._logger = RoverLogger(self)
 
         if not self._uart_port:
@@ -73,12 +92,30 @@ class HoverBoardNode(Node):
         self._serial: serial.Serial | None = None
         self._connected: bool = False
         self._last_reconnect_attempt: float = 0.0
+        self._reconnect_attempt_count: int = 0
+        self._reconnect_exhausted: bool = False
+
+        # ── last commanded values, re-sent continuously by the heartbeat ──
+        self._last_steer: int = 0
+        self._last_speed: int = 0
+        self._last_cmd_time: float = 0.0
 
         # ── accumulation buffer for partial frames ───────────────────────
         self._rx_buf = bytearray()
 
-        # ── initial connection (raises on total failure, same as before) ──
-        self._open_serial(initial=True)
+        # ── initial connection: non-fatal, mirrors ESPBridgeNode's startup.
+        # If the device isn't plugged in yet at launch time, log it and keep
+        # going — _read_tick's existing _try_reconnect() logic will pick the
+        # port up automatically the moment it becomes available, instead of
+        # crashing the whole node before it can even finish constructing.
+        try:
+            self._open_serial(initial=True)
+        except Exception as e:
+            self._connected = False
+            self._logger.err(
+                f"Hoverboard UART unavailable at startup on {self._uart_port}: {e}. "
+                f"Node will keep retrying in the background."
+            )
 
         # ── publisher + subscriber ───────────────────────────────────────
         self._encoder_pub = self.create_publisher(EncoderSpeeds, "/encoders_speeds", 10)
@@ -86,12 +123,13 @@ class HoverBoardNode(Node):
             ActuatorCommandMsg, "/esp_tx", self._cmd_cb, 10
         )
 
-        # ── single timer replaces the reader thread ──────────────────────
+        # ── timers ─────────────────────────────────────────────────────────
         self._read_timer = self.create_timer(1.0 / read_hz, self._read_tick)
+        self._send_timer = self.create_timer(1.0 / send_hz, self._send_tick)
 
         self._logger.info(
             f"HoverBoardNode started — port={self._uart_port} baud={self._baudrate} "
-            f"max_speed={self._max_speed} read_hz={read_hz}"
+            f"max_speed={self._max_speed} read_hz={read_hz} send_hz={send_hz}"
         )
 
     # ── connection management ──────────────────────────────────────────
@@ -112,35 +150,61 @@ class HoverBoardNode(Node):
             dsrdtr=False,
             rtscts=False,
         )
-        # Cold boot needs longer settle time for the hoverboard firmware to
-        # come up; reconnects (device was already running) can be quicker.
+        # Every open — cold boot AND reconnect — likely triggers a DTR-based
+        # hardware reset on the hoverboard mainboard (common wiring on these
+        # UART adapters: DTR tied straight to reset). Give it the full
+        # settle time every time, not just on the first connect, or the
+        # heartbeat starts firing into a board that's still rebooting and
+        # never gets heard.
         time.sleep(3.0)
         self._serial.reset_input_buffer()
         self._serial.reset_output_buffer()
         self._rx_buf = bytearray()
         self._connected = True
-        self._logger.info(f"Hoverboard UART connected on {self._uart_port}")
+        # Reset last-known command so a reconnect never resumes at a stale
+        # nonzero speed — always come back up safely at zero.
+        self._last_steer = 0
+        self._last_speed = 0
+        self._reconnect_attempt_count = 0
+        self._reconnect_exhausted = False
+        self._logger.succ(f"Hoverboard UART connected on {self._uart_port}")
 
     def _try_reconnect(self) -> None:
-        """Rate-limited reconnect attempt — call from any failure path."""
+        """Rate-limited reconnect attempt — call from any failure path.
+        Gives up after max_reconnect_attempts consecutive failures and logs
+        a final error instead of retrying forever."""
         self._connected = False
+
+        if self._reconnect_exhausted:
+            return  # already gave up — do nothing until the device reappears
+                    # and a successful _open_serial() resets the flag
+
         now = time.time()
         if now - self._last_reconnect_attempt < self._reconnect_interval:
             return  # too soon since last attempt, skip
         self._last_reconnect_attempt = now
+
         try:
             self._open_serial(initial=False)
         except Exception as e:
-            self._logger.warn(f"Reconnect failed: {e}")
+            self._reconnect_attempt_count += 1
+            if self._reconnect_attempt_count >= self._max_reconnect_attempts:
+                self._reconnect_exhausted = True
+                self._logger.err(
+                    f"Reconnect FAILED after {self._reconnect_attempt_count} attempts "
+                    f"on {self._uart_port}: {e}. Giving up — will not retry further."
+                )
+            else:
+                self._logger.warn(
+                    f"Reconnect attempt {self._reconnect_attempt_count}/"
+                    f"{self._max_reconnect_attempts} failed: {e}"
+                )
 
-    # ── command callback: fires immediately on message receipt ───────────
+    # ── command callback: computes and STORES the target frame ───────────
+    # Actual transmission happens in _send_tick, which runs continuously
+    # regardless of whether new /esp_tx messages are arriving.
 
     def _cmd_cb(self, msg: ActuatorCommandMsg) -> None:
-        if not self._connected:
-            # Drop commands silently while disconnected rather than
-            # attempting a doomed write on every incoming message.
-            return
-
         left  = max(0.0, min(1.0, float(msg.m1_speed) / 255.0))
         right = max(0.0, min(1.0, float(msg.m2_speed) / 255.0))
 
@@ -168,8 +232,25 @@ class HoverBoardNode(Node):
             speed = int(-((left + right) / 2.0) * self._max_speed)
             steer = int(((left - right) / 2.0) * self._max_speed)
 
+        self._last_steer = steer
+        self._last_speed = speed
+        self._last_cmd_time = time.time()
+
+    # ── heartbeat tick: sends the current target continuously ────────────
+
+    def _send_tick(self) -> None:
+        if not self._connected:
+            return  # _read_tick drives reconnect attempts; nothing to send yet
+
+        # Safety watchdog: if no /esp_tx message has arrived recently,
+        # zero out rather than keep repeating a stale nonzero command.
+        if (self._last_cmd_time > 0.0
+                and time.time() - self._last_cmd_time > self._cmd_watchdog_sec):
+            self._last_steer = 0
+            self._last_speed = 0
+
         try:
-            self._serial.write(_build_tx_frame(steer, speed))
+            self._serial.write(_build_tx_frame(self._last_steer, self._last_speed))
         except Exception as e:
             self._logger.warn(f"Hoverboard write failed: {e}")
             self._try_reconnect()

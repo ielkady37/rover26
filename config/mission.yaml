@@ -3,16 +3,16 @@ vision_timeout_sec: 120.0
 min_confidence_score: 0.80
 
 # Navigation Waypoints (x, y, yaw in radians)
-waypoints:
-  - id: "WP1"
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-  - id: "WP2"    # Target detection triggers upon reaching this waypoint
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
-  - id: "WP3"
-    x: 0.0
-    y: 0.0
-    yaw: 0.0
+waypoints: []
+  # - id: "WP1"
+  #   x: 0.0
+  #   y: 0.0
+  #   yaw: 0.0
+  # - id: "WP2"    # Target detection triggers upon reaching this waypoint
+  #   x: 0.0
+  #   y: 0.0
+  #   yaw: 0.0
+  # - id: "WP3"
+  #   x: 0.0
+  #   y: 0.0
+  #   yaw: 0.0

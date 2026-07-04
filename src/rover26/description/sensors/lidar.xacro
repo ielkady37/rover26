@@ -14,7 +14,7 @@
     <parent link="base_link"/>
     <child link="lidar_link"/>
     <!-- <origin xyz="0.27365 -0.0014001 0.04" rpy="0 0 0"/> lidar is now rotated 180 degrees-->
-    <origin xyz="0.0 -0.00140010000 0.04" rpy="0 0 3.14159"/>
+    <origin xyz="0.085 -0.0 0.20" rpy="0 0 3.14159"/>
   </joint>
 
   <!-- ═══════════════════════════════════════════════════════════════════════

@@ -188,10 +188,11 @@ local_costmap:
       global_frame: odom
       robot_base_frame: base_footprint
       rolling_window: true
+      footprint: "[[0.45, 0.3], [0.45, -0.3], [-0.45, -0.3], [-0.45, 0.3]]"
+      footprint_padding: 0.01
       width: 8
       height: 8
       resolution: 0.05
-      footprint: "[[0.25, 0.35], [0.25, -0.35], [-0.25, -0.35], [-0.25, 0.35]]"
       plugins: ["voxel_layer", "inflation_layer"]
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
@@ -216,7 +217,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
-        inflation_radius: 0.5
+        inflation_radius: 0.56
 
 # ── Global costmap ─────────────────────────────────────────────────────────────
 # obstacle_layer reads /scan directly. static_layer reads the SLAM /map.
@@ -227,7 +228,9 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.6
+      # robot_radius: 0.6
+      footprint: "[[0.45, 0.3], [0.45, -0.3], [-0.45, -0.3], [-0.45, 0.3]]"
+      footprint_padding: 0.01
       resolution: 0.05
       track_unknown_space: true
       rolling_window: true
@@ -254,7 +257,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
-        inflation_radius: 0.50
+        inflation_radius: 0.56
       always_send_full_costmap: True
 
 map_saver:

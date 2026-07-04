@@ -68,11 +68,16 @@ class LaneDetectionNode(LifecycleNode):
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info('LaneDetectionNode: activating...')
         try:
+            # BEST_EFFORT to match the camera driver's publisher QoS — a
+            # RELIABLE subscriber cannot connect to a BEST_EFFORT publisher,
+            # so this must stay BEST_EFFORT or the node never receives a frame.
             image_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
-                reliability=ReliabilityPolicy.RELIABLE,
+                reliability=ReliabilityPolicy.BEST_EFFORT,
             )
+            # RELIABLE for the lane result — downstream consumers (e.g.
+            # generic_points_publisher) must not silently drop a detection.
             result_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
