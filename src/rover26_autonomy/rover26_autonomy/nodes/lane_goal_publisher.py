@@ -27,7 +27,7 @@ Implements three-tier goal computation based on road curvature:
 
 RECOVERY (lane-loss)
 ────────────────────
-A 10 Hz watchdog detects when /lane_status goes completely silent (the lane
+A 10 Hz watchdog detects when /lane_detection goes completely silent (the lane
 detector stops publishing entirely when the lane exits the BEV frame).
 Two-phase direct /cmd_vel rotation recovery is then triggered:
   Phase 0 — rotate ~95° toward outside of the last known curve.
@@ -36,8 +36,8 @@ Two-phase direct /cmd_vel rotation recovery is then triggered:
 TOPICS & SUBSCRIPTIONS
 ──────────────────────
 Subscribed:
-  • /lane_status  [rover26/LaneStatus]   ← lane_detection_node
-  • /odom         [nav_msgs/Odometry]    ← odom_tf_broadcaster
+  • /lane_detection  [interfaces/LaneDetectionResult]  ← lane_detection_node
+  • /odom            [nav_msgs/Odometry]                ← odom_tf_broadcaster
 
 Published:
   • /cmd_vel         [geometry_msgs/Twist]          → motor driver (recovery rotation only)
@@ -58,6 +58,12 @@ Physical.*           Ground plane dimensions (GROUND_HEIGHT_M, GROUND_WIDTH_M,
                      LATERAL_BIAS_M)
 RosTopics.*          Topic names
 
+NOTE ON LANE DETECTION CONTRACT
+────────────────────────────────
+A side is considered "not detected" if its coefficient list is not length 3.
+lane_detection_node is expected to publish an empty list ([]) for a side it
+could not fit a polynomial to — not stale or zero-filled coefficients.
+
 ═════════════════════════════════════════════════════════════════════════════════
 """
 
@@ -73,7 +79,7 @@ from geometry_msgs.msg      import PoseStamped, Twist
 from nav_msgs.msg           import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg           import ColorRGBA
-from rover26.msg            import LaneStatus
+from interfaces.msg         import LaneDetectionResult
 from nav2_msgs.action       import NavigateToPose
 
 from rover26_autonomy.config_params import IMG_W, IMG_H, LaneGoalPublisher as Cfg, Physical, RosTopics
@@ -147,8 +153,10 @@ class LaneGoalPublisher(Node):
         self.cmd_vel_pub = self.create_publisher(Twist,       RosTopics.CMD_VEL,        10)
 
         # ── Subscriptions ────────────────────────────────────────────────────────
-        self.create_subscription(LaneStatus, RosTopics.LANE_STATUS, self._lane_cb, 10)
-        self.create_subscription(Odometry,   RosTopics.ODOM,        self._odom_cb, 10)
+        self.create_subscription(
+            LaneDetectionResult, RosTopics.LANE_DETECTION, self._lane_cb, 10
+        )
+        self.create_subscription(Odometry, RosTopics.ODOM, self._odom_cb, 10)
 
         # ── Watchdog timer ───────────────────────────────────────────────────────
         self.create_timer(1.0 / Cfg.WATCHDOG_HZ, self._watchdog_cb)
@@ -321,12 +329,13 @@ class LaneGoalPublisher(Node):
         self._marker_id = (self._marker_id + 1) % Cfg.MAX_MARKERS
 
     # =========================================================================
-    #  MAIN CALLBACK — runs on every /lane_status message
+    #  MAIN CALLBACK — runs on every /lane_detection message
     # =========================================================================
 
-    def _lane_cb(self, msg: LaneStatus) -> None:
+    def _lane_cb(self, msg: LaneDetectionResult) -> None:
         """
-        Receive a LaneStatus message and compute + dispatch the next Nav2 goal.
+        Receive a LaneDetectionResult message and compute + dispatch the next
+        Nav2 goal.
 
         The method silently returns if:
           - Nav2 is not yet ready or odometry hasn't arrived
@@ -339,8 +348,8 @@ class LaneGoalPublisher(Node):
         if not self._nav_server_ready or self.current_odom is None:
             return
 
-        left_ok  = msg.left_detected  and len(msg.left_coeffs)  == 3
-        right_ok = msg.right_detected and len(msg.right_coeffs) == 3
+        left_ok  = len(msg.left_lane_coeffs)  == 3
+        right_ok = len(msg.right_lane_coeffs) == 3
 
         if self._nav_active:
             if self._is_rotating and left_ok and right_ok:
@@ -364,8 +373,8 @@ class LaneGoalPublisher(Node):
             return
 
         # ── 1. Lane geometry ─────────────────────────────────────────────────────
-        left_c   = np.array(msg.left_coeffs,  dtype=float)
-        right_c  = np.array(msg.right_coeffs, dtype=float)
+        left_c   = np.array(msg.left_lane_coeffs,  dtype=float)
+        right_c  = np.array(msg.right_lane_coeffs, dtype=float)
         centre_c = (left_c + right_c) / 2.0
 
         curvature   = abs(centre_c[0])
@@ -481,7 +490,7 @@ class LaneGoalPublisher(Node):
                     f'[NORM] sharp-exit momentum — {self._sharp_exit_goals} goals remaining'
                 )
 
-    # ── 7. Goal throttle ─────────────────────────────────────────────────────
+        # ── 7. Goal throttle ─────────────────────────────────────────────────────
         on_straight   = not in_sharp_turn and blend_curve < 0.3
         heading_drift = False
 
@@ -563,7 +572,7 @@ class LaneGoalPublisher(Node):
 
     def _watchdog_cb(self) -> None:
         """
-        Fires at WATCHDOG_HZ (10 Hz), independently of /lane_status.
+        Fires at WATCHDOG_HZ (10 Hz), independently of /lane_detection.
         Detects topic silence and triggers rotation recovery.
         Also runs the goal proximity checker on every tick.
         """
