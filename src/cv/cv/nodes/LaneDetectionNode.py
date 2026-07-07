@@ -74,7 +74,7 @@ class LaneDetectionNode(LifecycleNode):
             image_qos = QoSProfile(
                 history=HistoryPolicy.KEEP_LAST,
                 depth=_QOS_DEPTH,
-                reliability=ReliabilityPolicy.BEST_EFFORT,
+                reliability=ReliabilityPolicy.RELIABLE,
             )
             # RELIABLE for the lane result — downstream consumers (e.g.
             # generic_points_publisher) must not silently drop a detection.

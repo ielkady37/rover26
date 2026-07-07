@@ -1,5 +1,5 @@
 fisheye_camera:
-  index: /dev/video2
+  index: /dev/video0
   width: 1280
   height: 720
   fps: 30
