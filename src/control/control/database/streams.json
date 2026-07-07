@@ -1,0 +1,18 @@
+{
+    "camera1": {
+        "index": "/dev/rapoo_down",
+        "url": "http://192.168.1.233:8081/stream.mjpg",
+        "geometry": {
+            "top": "0%",
+            "left": "0%",
+            "width": "25%",
+            "height": "25%"
+        },
+        "width": 320,
+        "height": 240,
+        "format": "MJPG",
+        "type": "NORMAL",
+        "fps": 20,
+        "port": 8081
+    }
+}

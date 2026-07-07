@@ -128,6 +128,41 @@ class TestManualNavigationNode:
         assert kwargs['measured_value'] == 10.0
         assert kwargs['dt'] > 0.0
 
+    def test_control_loop_throttle_syncs_setpoint_to_current_heading(self, ros_init, mocked_dependencies):
+        """Throttle-only motion should anchor the PID setpoint to the current heading before stabilizing."""
+        mock_conf, mock_joy = mocked_dependencies
+        self.node.on_configure(None)
+        self.node.latest_yaw = 45.0
+        self.node.last_time = time.time() - 0.1
+        self.node.motor_pub.publish = MagicMock()
+
+        self.node.pid.update_setpoint = MagicMock()
+        self.node.pid.stabilize = MagicMock(return_value=0.0)
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 1.0, "l2_axis": 0.0, "left_x_axis": 0.0}
+
+        self.node.control_loop_callback()
+
+        self.node.pid.update_setpoint.assert_called_once_with(45.0)
+
+    def test_control_loop_idle_uses_pid_to_hold_heading(self, ros_init, mocked_dependencies):
+        """Idle control should still use the PID to hold the previously locked heading."""
+        mock_conf, mock_joy = mocked_dependencies
+        self.node.on_configure(None)
+        self.node.latest_yaw = 30.0
+        self.node.last_time = time.time() - 0.1
+        self.node.motor_pub.publish = MagicMock()
+
+        self.node.pid.update_setpoint = MagicMock()
+        self.node.pid.stabilize = MagicMock(return_value=0.15)
+        mock_joy.return_value.getAxis.return_value = {"r2_axis": 0.0, "l2_axis": 0.0, "left_x_axis": 0.0}
+
+        self.node.control_loop_callback()
+
+        self.node.pid.stabilize.assert_called_once()
+        args, kwargs = self.node.pid.stabilize.call_args
+        assert kwargs['measured_value'] == 30.0
+        assert kwargs['dt'] > 0.0
+
     def test_motor_mapping_asymmetric_turn(self, ros_init, mocked_dependencies):
         """[Gap 3, 16] Pure right turn -> Left wheel (M2) forwards, Right wheel (M1) backwards."""
         mock_conf, mock_joy = mocked_dependencies

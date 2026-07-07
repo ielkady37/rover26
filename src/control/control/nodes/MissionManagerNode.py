@@ -17,8 +17,8 @@ except ImportError:
 
 import time
 from control.services.MissionManager import MissionManager, Phase, VisionState
-from utils.Configurator import Configurator
-from utils.Logger import RoverLogger
+from utils.utils.Configurator import Configurator
+from utils.utils.Logger import RoverLogger
 
 def _yaw_to_quat(yaw: float):
     half = yaw * 0.5

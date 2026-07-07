@@ -1,3 +1,3 @@
-yaw_KP: 0.02
+yaw_KP: 1
 yaw_KI: 0.0
-yaw_KD: 0.0
+yaw_KD: 0.8
