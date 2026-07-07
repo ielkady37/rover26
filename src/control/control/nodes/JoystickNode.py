@@ -5,7 +5,7 @@ from interfaces.msg import Joystick
 from control.services.Joystick import CJoystick
 import signal
 from multiprocessing.shared_memory import SharedMemory
-from utils.Logger import RoverLogger
+from utils.utils.Logger import RoverLogger
 
 class JoystickNode(Node):
     def __init__(self):

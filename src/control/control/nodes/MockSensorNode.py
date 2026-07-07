@@ -41,7 +41,7 @@ import rclpy
 from rclpy.node import Node
 
 from control.mocks.MockSensorService import MockSensorService
-from utils.Logger import RoverLogger
+from utils.utils.Logger import RoverLogger
 
 _TICK_HZ = float(os.getenv('ROVER_MOCK_TICK_HZ', '2'))
 
