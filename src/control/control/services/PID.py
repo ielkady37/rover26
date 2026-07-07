@@ -39,17 +39,18 @@ class PIDController:
             return 0.0
 
         error = self._angle_difference(measured_value, self.setpoint)
+        normalized_error = error / 180.0
 
-        p = self.kp * error
-        self._h_integral += self.ki * error * dt
+        p = self.kp * normalized_error
+        self._h_integral += self.ki * normalized_error * dt
         self._h_integral = _clamp(self._h_integral, -1.0, 1.0)
 
         if self._h_prev_error is None:
             d = 0.0
         else:
-            d = self.kd * (error - self._h_prev_error) / dt
-            
-        self._h_prev_error = error
+            d = self.kd * (normalized_error - self._h_prev_error) / dt
+
+        self._h_prev_error = normalized_error
 
         output = _clamp(p + self._h_integral + d, -1.0, 1.0)
         return float(output)

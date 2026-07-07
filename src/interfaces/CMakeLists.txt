@@ -27,6 +27,13 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FaceRecognitionResult.msg"
   "msg/PotholesDetectionResult.msg"
   "msg/LaneDetectionResult.msg"
+  "srv/GetLayout.srv"
+  "srv/SetLayout.srv"
+  "srv/GetConfig.srv"
+  "srv/GetStream.srv"
+  "srv/GetActiveController.srv"
+  "srv/GetPIDStatus.srv"
+  "srv/SetConfig.srv"
   DEPENDENCIES builtin_interfaces std_msgs sensor_msgs
 ) # <-- Added the missing parenthesis here
 

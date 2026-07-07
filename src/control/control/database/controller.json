@@ -1,0 +1,210 @@
+{
+    "ps4": {
+        "ids": [
+            "Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 09cc)",
+            "Sony PLAYSTATION(R)3 Controller (STANDARD GAMEPAD Vendor: 054c Product: 0268)",
+            "PS4 Controller (STANDARD GAMEPAD Vendor: 054c Product: 05c4)",
+            "Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 05c4)"
+        ],
+        "switch_key_binding": [
+            "button_l1",
+            "button_r1"
+        ],
+        "modes": [
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "HEAVE_DOWN",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_rect": "DCRIGHTGRIPPER_LEFT",
+                "button_o": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_tri": "bty5"
+            },
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "bty5",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_rect": "DCRIGHTGRIPPER_LEFT",
+                "button_o": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_tri": "bty5"
+            }
+        ],
+        "index_map": {
+            "digital": {
+                "0": "button_x",
+                "1": "button_o",
+                "2": "button_rect",
+                "3": "button_tri",
+                "4": "button_l1",
+                "5": "button_r1",
+                "6": "button_l2",
+                "7": "button_r2",
+                "8": "button_l3",
+                "9": "button_r3",
+                "10": "button_top",
+                "11": "button_bot",
+                "12": "button_left",
+                "13": "button_right"
+            },
+            "analog": {
+                "0": "left_x_axis",
+                "1": "left_y_axis",
+                "2": "right_x_axis",
+                "3": "right_y_axis"
+            }
+        }
+    },
+    "xbox": {
+        "ids": [
+            "Xbox 360 Controller (XInput STANDARD GAMEPAD)",
+            "Xbox One Controller (STANDARD GAMEPAD Vendor: 045e Product: 02ff)",
+            "Microsoft Controller (STANDARD GAMEPAD Vendor: 045e Product: 02fd)",
+            "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b12)"
+        ],
+        "switch_key_binding": [
+            "button_l1",
+            "button_r1"
+        ],
+        "modes": [
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "HEAVE_DOWN",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_a": "DCRIGHTGRIPPER_LEFT",
+                "button_b": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_y": "bty5"
+            },
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "HEAVE_DOWN",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_a": "DCRIGHTGRIPPER_LEFT",
+                "button_b": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_y": "bty5"
+            }
+        ],
+        "index_map": {
+            "digital": {
+                "0": "button_x",
+                "1": "button_b",
+                "2": "button_a",
+                "3": "button_y",
+                "4": "button_l1",
+                "5": "button_r1",
+                "6": "button_l2",
+                "7": "button_r2",
+                "8": "button_l3",
+                "9": "button_r3",
+                "10": "button_top",
+                "11": "button_bot",
+                "12": "button_left",
+                "13": "button_right"
+            },
+            "analog": {
+                "0": "left_x_axis",
+                "1": "left_y_axis",
+                "2": "right_x_axis",
+                "3": "right_y_axis"
+            }
+        }
+    },
+    "ps5": {
+        "ids": [
+            "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)",
+            "Sony Interactive Entertainment DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)"
+        ],
+        "switch_key_binding": [
+            "button_l1",
+            "button_r1"
+        ],
+        "modes": [
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "HEAVE_DOWN",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_rect": "DCRIGHTGRIPPER_LEFT",
+                "button_o": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_tri": "bty5"
+            },
+            {
+                "button_l1": "LEFTGRIPPER_OPEN",
+                "button_l2": "LEFTGRIPPER_CLOSE",
+                "button_l3": "bty5",
+                "button_r1": "RIGHTGRIPPER",
+                "button_r2": "LEFTGRIPPER",
+                "button_r3": "HEAVE_UP",
+                "button_left": "DCLEFTGRIPPER_RIGHT",
+                "button_right": "DCLEFTGRIPPER_LEFT",
+                "button_rect": "DCRIGHTGRIPPER_LEFT",
+                "button_o": "DCRIGHTGRIPPER_RIGHT",
+                "button_top": "SERVO_UP",
+                "button_bot": "SERVO_DOWN",
+                "button_x": "FLASH",
+                "button_tri": "bty5"
+            }
+        ],
+        "index_map": {
+            "digital": {
+                "0": "button_x",
+                "1": "button_o",
+                "2": "button_rect",
+                "3": "button_tri",
+                "4": "button_l1",
+                "5": "button_r1",
+                "6": "button_l2",
+                "7": "button_r2",
+                "10": "button_l3",
+                "11": "button_r3",
+                "12": "button_top",
+                "13": "button_bot",
+                "14": "button_left",
+                "15": "button_right"
+            },
+            "analog": {
+                "0": "left_x_axis",
+                "1": "left_y_axis",
+                "2": "right_x_axis",
+                "3": "right_y_axis"
+            }
+        }
+    }
+}

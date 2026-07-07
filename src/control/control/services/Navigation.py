@@ -27,11 +27,11 @@ class Navigation:
         
         self._log.info(f"Navigation facade active (deadzone={deadzone}, max_pwm={max_pwm}, alpha={alpha})")
 
-    def calculate_motor_commands(self, linear_effort: float, angular_effort: float) -> Optional[MotorCommandDTO]:
+    def calculate_motor_commands(self, target_linear: float, target_angular: float) -> Optional[MotorCommandDTO]:
         """Used by Manual Navigation. Mixes joystick inputs, THEN smooths."""
         try:
             # 1. Kinematics (Tank Drive Mixing) using RAW abstract inputs
-            target_left, target_right = Steering.calculate_tank_drive(throttle=linear_effort, yaw=angular_effort)
+            target_left, target_right = Steering.calculate_tank_drive(throttle=target_linear, yaw=target_angular)
             
             # 2. Pass to wheel speed calculator for smoothing and mapping
             return self.calculate_from_wheel_speeds(target_left, target_right)

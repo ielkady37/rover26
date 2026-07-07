@@ -1,5 +1,6 @@
 import cv2
-import os 
+import os
+import signal
 import pyshine as ps
 import time
 import logging
@@ -178,6 +179,10 @@ class ManualCameraStreamer:
         )
 
     def __run(self):
+        # The child forks after the node installs its ROS shutdown handlers;
+        # reset them so the stop event (and a real SIGTERM) control this process.
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
         while not self._stop_event.is_set():
             raw_capture = None
             server = None
@@ -253,12 +258,18 @@ class ManualCameraStreamer:
         # 1. Signal the child loop to stop
         self._stop_event.set()
 
-        # 2. Give the child time to finish its finally block and release the fd
-        if self.process is not None:
+        if self.process is None:
+            return
+
+        # 2. Let the child exit its loop and release the device in its finally block
+        self.process.join(timeout=5)
+
+        # 3. Escalate only if it didn't exit gracefully
+        if self.process.is_alive():
             self.process.terminate()
-            self.process.join(timeout=5)
-            if self.process.is_alive():
-                print(f"[{self.cameraIndex}] Force killing stream process.")
-                self.process.kill()
-                self.process.join(timeout=2)
-            self.process = None
+            self.process.join(timeout=2)
+        if self.process.is_alive():
+            print(f"[{self.cameraIndex}] Force killing stream process.")
+            self.process.kill()
+            self.process.join(timeout=2)
+        self.process = None

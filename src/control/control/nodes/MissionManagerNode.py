@@ -58,6 +58,8 @@ class MissionManagerNode(Node):
         self.manual_camera_client = self.create_client(ChangeState, '/manual_camera_streaming_node/change_state')
         self.auto_camera_client = self.create_client(ChangeState, '/autonomous_camera_streaming_node/change_state')
         self.auto_client = self.create_client(ChangeState, '/autonomous_navigation_node/change_state')
+        self.face_recognition_client = self.create_client(ChangeState, '/face_recognition_node/change_state')
+        self.lane_detection_client = self.create_client(ChangeState, '/lane_detection_node/change_state')
 
         # 3. Setup Nav2 Action Client
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -71,7 +73,7 @@ class MissionManagerNode(Node):
         self.tick_timer = self.create_timer(0.1, self.tick_callback)
         
         # 6. Execute Boot Sequence
-        self._log.info("Waiting for Navigation nodes to come online...")
+        self._log.info("Waiting for Navigation, Camera, and Perception nodes to come online...")
         self._execute_boot_sequence()
 
     # LIFECYCLE ORCHESTRATION
@@ -84,13 +86,17 @@ class MissionManagerNode(Node):
         self.auto_client.wait_for_service(timeout_sec=5.0)
         self.manual_camera_client.wait_for_service(timeout_sec=5.0)
         self.auto_camera_client.wait_for_service(timeout_sec=5.0)
-        self._log.info("Configuring Navigation Nodes (Loading YAMLs, Shared Memory, etc.)...")
+        self.face_recognition_client.wait_for_service(timeout_sec=5.0)
+        self.lane_detection_client.wait_for_service(timeout_sec=5.0)
+        self._log.info("Configuring Navigation, Camera, and Perception Nodes (Loading YAMLs, Shared Memory, etc.)...")
         
         # 1. Send CONFIGURE to both (Moves them to 'Inactive')
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CONFIGURE, "ManualNav")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_CONFIGURE, "AutoNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_CONFIGURE, "ManualCamera")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_CONFIGURE, "AutoCamera")
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_CONFIGURE, "FaceRecognition")
+        self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_CONFIGURE, "LaneDetection")
 
         # 2. Automatically Activate Phase 1 (Manual)
         self._log.info("Boot sequence complete. Activating default Phase 1 (Manual).")
@@ -104,6 +110,8 @@ class MissionManagerNode(Node):
         # 1. Deactivate Autonomous Node (Active -> Inactive)
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_DEACTIVATE, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
+        self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_DEACTIVATE, "LaneDetection")
         
         # 2. Activate Manual Node (Inactive -> Active)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_ACTIVATE, "ManualNav")
@@ -118,8 +126,10 @@ class MissionManagerNode(Node):
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
         
         # 2. Activate Autonomous Node (Inactive -> Active)
+        # FaceRecognition stays Inactive here - it is only activated upon reaching WP2.
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_ACTIVATE, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_ACTIVATE, "AutoCamera")
+        self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_ACTIVATE, "LaneDetection")
 
         # 3. Ensure Nav2 is ready, then dispatch the first waypoint
         if not self.nav_client.wait_for_server(timeout_sec=3.0):
@@ -140,12 +150,16 @@ class MissionManagerNode(Node):
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_DEACTIVATE, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
+        self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_DEACTIVATE, "LaneDetection")
         
         # Then Unconfigure (Cleanup)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CLEANUP, "ManualNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_CLEANUP, "ManualCamera")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_CLEANUP, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_CLEANUP, "AutoCamera")
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_CLEANUP, "FaceRecognition")
+        self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_CLEANUP, "LaneDetection")
 
     def _change_lifecycle_state(self, client: rclpy.client.Client, transition_id: int, node_label: str):
         """Helper to send standard ROS 2 lifecycle transition requests."""
@@ -208,7 +222,7 @@ class MissionManagerNode(Node):
 
             if resolved:
                 self._log.info(f"Vision Task Concluded: {reason}")
-                self._dispatch_next_waypoint() # Proceed to WP3
+                self._conclude_vision_task() # Proceed to WP3
         except Exception as e:
             self._log.err(f"Error evaluating target status: {e}")
 
@@ -219,9 +233,14 @@ class MissionManagerNode(Node):
                 resolved, reason = self.manager.evaluate_target_status(False, 0.0, time.time())
                 if resolved:
                     self._log.warn(f"Vision Task Concluded via Timeout: {reason}")
-                    self._dispatch_next_waypoint()
+                    self._conclude_vision_task()
         except Exception as e:
             self._log.err(f"Exception in mission tick loop: {e}")
+
+    def _conclude_vision_task(self):
+        """Deactivates FaceRecognition (only needed at WP2) and resumes the mission."""
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
+        self._dispatch_next_waypoint()
 
     # NAV2 ACTION CLIENT LOGIC
     def _dispatch_next_waypoint(self):
@@ -268,7 +287,8 @@ class MissionManagerNode(Node):
             self._log.succ(f"Arrived at waypoint: {wp_id}")
             
             if wp_id == "WP2":
-                self._log.info("Waypoint 2 Reached. Triggering Vision Task Search...")
+                self._log.info("Waypoint 2 Reached. Activating FaceRecognition and triggering Vision Task Search...")
+                self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_ACTIVATE, "FaceRecognition")
                 self.manager.start_vision_task(time.time())
             else:
                 self._dispatch_next_waypoint()
