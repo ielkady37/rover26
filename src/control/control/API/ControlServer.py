@@ -7,6 +7,7 @@ Now PID params are stored in YAML instead of JSON.
 import os
 import rclpy
 from rclpy.node import Node
+from utils.EnvParams import EnvParams
 
 import yaml  # ✅ CHANGED (was json)
 
@@ -20,9 +21,8 @@ from interfaces.srv import (
     GetPIDStatus,
 )
 
-_DB = os.path.expanduser('~/rover26/src/control/control/database')
-_PID_PATH = os.path.expanduser('~/rover26/config/pid_ks.yaml') 
-
+_DB = os.path.expanduser(EnvParams().get('DB_PATH', '~/rover26/config'))
+_PID_PATH = os.path.expanduser(EnvParams().get('PID_PATH', '~/rover26/config/pid_ks.yaml'))
 
 # ─────────────────────────────────────────────
 # YAML helpers (NEW)

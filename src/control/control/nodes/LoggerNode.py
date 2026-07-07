@@ -33,7 +33,7 @@ import rclpy
 from rclpy.node import Node
 
 from interfaces.msg import LogEntry
-from utils.utils.RedisClient import RedisClient
+from utils.RedisClient import RedisClient
 
 _STREAM_KEY = os.getenv('ROVER_LOG_STREAM_KEY', 'rover:logs')
 

@@ -41,8 +41,8 @@ from rclpy.node import Node
 
 from interfaces.msg import HealthReport
 from control.services.SystemHealthService import SystemHealthService
-from utils.utils.RedisClient import RedisClient
-from utils.utils.Logger import RoverLogger
+from utils.RedisClient import RedisClient
+from utils.Logger import RoverLogger
 
 _REGISTRY_KEY = os.getenv('ROVER_HEALTH_REGISTRY_KEY', 'rover:health:__registry__')
 _STALE_THRESHOLD_S = int(os.getenv('ROVER_HEALTH_STALE_S', '15'))

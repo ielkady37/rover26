@@ -5,7 +5,7 @@ import serial
 import rclpy
 from rclpy.node import Node
 from interfaces.msg import ActuatorCommand as ActuatorCommandMsg, EncoderSpeeds
-from utils.utils.Logger import RoverLogger
+from utils.Logger import RoverLogger
 
 _START_FRAME: int = 0xABCD
 _TX_SIZE:     int = 8

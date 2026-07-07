@@ -5,7 +5,7 @@ from control.services.DirEvaluator import DirEvaluator
 from control.services.PWMMapper import PWMMapper
 from control.services.ExponentialSmoothing import ExponentialSmoothing
 from control.DTOs.MotorCommandDTO import MotorCommandDTO
-from utils.utils.Logger import RoverLogger
+from utils.Logger import RoverLogger
 
 class Navigation:
     """

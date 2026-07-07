@@ -8,8 +8,8 @@ import time
 from interfaces.msg import ActuatorCommand
 from control.services.Navigation import Navigation
 from control.services.Kinematics import Kinematics
-from utils.utils.Logger import RoverLogger
-from utils.utils.Configurator import Configurator
+from utils.Logger import RoverLogger
+from utils.Configurator import Configurator
 
 class AutonomousNavigationNode(LifecycleNode):
     """

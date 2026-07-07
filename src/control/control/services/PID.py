@@ -1,6 +1,6 @@
 import math
 from typing import Optional
-from utils.utils.Logger import RoverLogger
+from utils.Logger import RoverLogger
 
 def _clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(value, upper))

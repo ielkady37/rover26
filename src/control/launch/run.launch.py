@@ -138,7 +138,7 @@ def generate_launch_description():
         parameters=[{'port': 9090}]
     )
 
-    #manual camera streamer
+    # cv nodes 
     manual_camera_streaming_node = Node(
         package='cv',
         executable='manual_camera_streaming_node',
@@ -151,6 +151,20 @@ def generate_launch_description():
         executable='autonomous_camera_streaming_node',
         output="screen",
         name="autonomous_camera_streaming_node"
+    )
+
+    lane_detection_node = Node(
+        package='cv',
+        executable='lane_detection_node',
+        output="screen",
+        name="lane_detection_node"
+    )
+
+    face_recognition_node = Node(
+        package='cv',
+        executable='face_recognition_node',
+        output="screen",
+        name="face_recognition_node"
     )
 
     return LaunchDescription([
@@ -167,5 +181,7 @@ def generate_launch_description():
         rosbridge_server_node,
         camera_control_server,
         manual_camera_streaming_node,
-        autonomous_camera_streaming_node
+        autonomous_camera_streaming_node,
+        lane_detection_node,
+        face_recognition_node
     ])

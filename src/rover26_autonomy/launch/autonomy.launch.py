@@ -61,7 +61,7 @@ def generate_launch_description():
     twist_mux_params = os.path.join(autonomy_pkg, 'config', 'twist_mux.yaml')
     nav2_params      = os.path.join(autonomy_pkg, 'config', 'nav2_params.yaml')
     mapper_params    = os.path.join(autonomy_pkg, 'config', 'mapper_params_online_async.yaml')
-    rviz_config      = os.path.join(autonomy_pkg, 'config', 'autonomy.rviz')
+    rviz_config      = os.path.join(autonomy_pkg, 'rviz', 'integration.rviz')
 
     return LaunchDescription([
 

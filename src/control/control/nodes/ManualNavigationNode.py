@@ -9,8 +9,8 @@ from interfaces.msg import EulerAngles
 from control.services.Navigation import Navigation
 from control.services.PID import PIDController
 from control.services.Joystick import CJoystick
-from utils.utils.Configurator import Configurator
-from utils.utils.Logger import RoverLogger
+from utils.Configurator import Configurator
+from utils.Logger import RoverLogger
 
 class ManualNavigationNode(LifecycleNode):
 
