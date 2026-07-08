@@ -100,7 +100,7 @@ class ManualCameraStreamer:
     def _setup_mjpg(self):
         print(f"Initializing camera '{self.cameraIndex}' with MJPEG format...")
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;mjpeg"
-        capture = cv2.VideoCapture(self.cameraInde)
+        capture = cv2.VideoCapture(self.cameraIndex)
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
         capture.set(cv2.CAP_PROP_FOURCC, fourcc)
         return capture
