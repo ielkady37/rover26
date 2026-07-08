@@ -58,7 +58,7 @@ def generate_launch_description():
     autonomy_pkg = get_package_share_directory('rover26_autonomy')
 
     # ── Config file paths ──────────────────────────────────────────────────
-    twist_mux_params = os.path.join(autonomy_pkg, 'config', 'twist_mux.yaml')
+    # twist_mux_params = os.path.join(autonomy_pkg, 'config', 'twist_mux.yaml')
     nav2_params      = os.path.join(autonomy_pkg, 'config', 'nav2_params.yaml')
     mapper_params    = os.path.join(autonomy_pkg, 'config', 'mapper_params_online_async.yaml')
     rviz_config      = os.path.join(autonomy_pkg, 'rviz', 'integration.rviz')
@@ -107,14 +107,14 @@ def generate_launch_description():
             actions=[
 
                 # ── Velocity arbitration ───────────────────────────────────
-                Node(
-                    package='twist_mux',
-                    executable='twist_mux',
-                    name='twist_mux',
-                    parameters=[twist_mux_params],
-                    remappings=[('/cmd_vel_out', '/cmd_vel_stamped')],
-                    output='screen',
-                ),
+                # Node(
+                #     package='twist_mux',
+                #     executable='twist_mux',
+                #     name='twist_mux',
+                #     parameters=[twist_mux_params],
+                #     remappings=[('/cmd_vel_out', '/cmd_vel_stamped')],
+                #     output='screen',
+                # ),
 
                 # ── TwistStamped → Twist ───────────────────────────────────
                 Node(

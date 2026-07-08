@@ -115,7 +115,7 @@ controller_server:
       gamma: 0.015
       motion_model: "DiffDrive"
       visualize: false
-      reset_period: 1.0
+      reset_period: 5.0
       regenerate_noises: false
       TrajectoryVisualizer:
         trajectory_step: 5

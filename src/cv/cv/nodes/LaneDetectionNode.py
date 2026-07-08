@@ -155,23 +155,23 @@ class LaneDetectionNode(LifecycleNode):
         # throttled frames, so intermittent dropouts are visible.
         state = (len(left_coeffs) == 3, len(right_coeffs) == 3)
         if state != self._diag_last_state:
-            self._log.warn(
-                f'[DIAG] frame#{self._diag_frame} lane state changed: '
-                f'left={"OK" if state[0] else "LOST"} '
-                f'right={"OK" if state[1] else "LOST"} '
-                f'(was {self._diag_last_state})'
-            )
+            # self._log.warn(
+            #     f'[DIAG] frame#{self._diag_frame} lane state changed: '
+            #     f'left={"OK" if state[0] else "LOST"} '
+            #     f'right={"OK" if state[1] else "LOST"} '
+            #     f'(was {self._diag_last_state})'
+            # )
             self._diag_last_state = state
 
         if self._diag_frame % _DIAG_EVERY_N == 1:
             infer_ms = (time.monotonic() - now) * 1000.0
             fps = f'~{1000.0 / dt_ms:.1f}fps' if dt_ms > 0 else 'first frame'
-            self._log.info(
-                f'[DIAG] frame#{self._diag_frame}  dt={dt_ms:.0f}ms ({fps})  '
-                f'detect={infer_ms:.0f}ms  img={raw.shape[1]}x{raw.shape[0]}  '
-                f'L={[f"{c:.4e}" for c in left_coeffs] or "NONE"}  '
-                f'R={[f"{c:.4e}" for c in right_coeffs] or "NONE"}'
-            )
+            # self._log.info(
+            #     f'[DIAG] frame#{self._diag_frame}  dt={dt_ms:.0f}ms ({fps})  '
+            #     f'detect={infer_ms:.0f}ms  img={raw.shape[1]}x{raw.shape[0]}  '
+            #     f'L={[f"{c:.4e}" for c in left_coeffs] or "NONE"}  '
+            #     f'R={[f"{c:.4e}" for c in right_coeffs] or "NONE"}'
+            # )
 
         try:
             result = LaneDetectionResult()

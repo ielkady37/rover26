@@ -200,10 +200,10 @@ class LaneDetector:
             left_mask = ll_seg_mask[:, :mid]
             right_mask = ll_seg_mask[:, mid:]
 
-            left_coeffs = self._fit_lane(left_mask, x_offset=0,
-                                         side='LEFT ' if diag else None)
-            right_coeffs = self._fit_lane(right_mask, x_offset=mid,
-                                          side='RIGHT' if diag else None)
+            left_coeffs, left_span = self._fit_lane(left_mask, x_offset=0,
+                                                    side='LEFT ' if diag else None)
+            right_coeffs, right_span = self._fit_lane(right_mask, x_offset=mid,
+                                                      side='RIGHT' if diag else None)
 
             # [DIAG] per-frame summary: mask pixel budget per side + fit outcome
             if diag:
@@ -216,14 +216,19 @@ class LaneDetector:
                         return 'NONE'
                     return '[' + ' '.join(f'{c:+.4e}' for c in coeffs) + ']'
 
-                self._log.info(
-                    f'[DIAG] frame#{self._diag_frame} {w_frame}x{h_frame}  '
-                    f'lane_px L={left_px} R={right_px}  drivable_px={da_px}  '
-                    f'L={fmt(left_coeffs)}  R={fmt(right_coeffs)}'
-                )
+                # self._log.info(
+                #     f'[DIAG] frame#{self._diag_frame} {w_frame}x{h_frame}  '
+                #     f'lane_px L={left_px} R={right_px}  drivable_px={da_px}  '
+                #     f'L={fmt(left_coeffs)}  R={fmt(right_coeffs)}'
+                # )
 
             # --- Annotate ---
             YOLOUtils.show_seg_result(im0, (da_seg_mask, ll_seg_mask), is_demo=True)
+
+            # Fitted polynomials (what the goal publisher actually receives),
+            # drawn over their fitted y-range: LEFT = blue, RIGHT = red.
+            self._draw_lane_fit(im0, left_coeffs, left_span, (255, 80, 0))
+            self._draw_lane_fit(im0, right_coeffs, right_span, (0, 0, 255))
             for det in pred:
                 if len(det):
                     det[:, :4] = CVUtilities.scale_coords(
@@ -237,10 +242,10 @@ class LaneDetector:
         except Exception:
             # [DIAG] previously swallowed silently — an inference/undistort crash
             # looked identical to "no lanes found" downstream. Always log.
-            self._log.err(
-                f'[DIAG] detect() crashed on frame#{self._diag_frame} — returning '
-                f'empty coeffs:\n{traceback.format_exc()}'
-            )
+            # self._log.err(
+            #     f'[DIAG] detect() crashed on frame#{self._diag_frame} — returning '
+            #     f'empty coeffs:\n{traceback.format_exc()}'
+            # )
             return raw_frame, [], []
 
     # ------------------------------------------------------------------
@@ -261,21 +266,22 @@ class LaneDetector:
 
         Returns
         -------
-        list[float]
-            Polynomial coefficients ``[a, b, ..., c]`` of degree
-            ``self._poly_degree`` for ``x = f(y)``, or ``[]`` when fewer
-            than ``poly_degree + 1`` pixels are available.
+        tuple[list[float], tuple[int, int] | None]
+            ``(coeffs, (y_min, y_max))`` — polynomial coefficients
+            ``[a, b, ..., c]`` of degree ``self._poly_degree`` for
+            ``x = f(y)`` plus the fitted y-range, or ``([], None)`` when
+            the blob was rejected.
         """
         ys, xs = np.where(mask == 1)
         # Require enough points and sufficient vertical spread for a stable fit
         min_pts = max(self._poly_degree + 1, 10)
         if len(ys) < min_pts:
-            if side:
-                self._log.warn(
-                    f'[DIAG:fit] {side} REJECT — only {len(ys)} lane px '
-                    f'(need ≥{min_pts})'
-                )
-            return []
+            # if side:
+                # self._log.warn(
+                #     f'[DIAG:fit] {side} REJECT — only {len(ys)} lane px '
+                #     f'(need ≥{min_pts})'
+                # )
+            return [], None
 
         y_spread = float(np.ptp(ys))
         x_spread = float(np.ptp(xs))
@@ -283,41 +289,55 @@ class LaneDetector:
         # A lane line must span a real vertical stretch of the image.
         min_y_spread = self._min_y_spread_frac * mask.shape[0]
         if y_spread < min_y_spread:
-            if side:
-                self._log.warn(
-                    f'[DIAG:fit] {side} REJECT — y-spread {int(y_spread)}px '
-                    f'< {int(min_y_spread)}px ({self._min_y_spread_frac:.2f} of '
-                    f'{mask.shape[0]} rows) — horizontal blob, not a lane line'
-                )
-            return []
+            # if side:
+            #     self._log.warn(
+            #         f'[DIAG:fit] {side} REJECT — y-spread {int(y_spread)}px '
+            #         f'< {int(min_y_spread)}px ({self._min_y_spread_frac:.2f} of '
+            #         f'{mask.shape[0]} rows) — horizontal blob, not a lane line'
+            #     )
+            return [], None
 
         # Near-horizontal features fit x=f(y) with insane curvature.
         ratio = x_spread / max(y_spread, 1.0)
         if ratio > self._max_horizontal_ratio:
-            if side:
-                self._log.warn(
-                    f'[DIAG:fit] {side} REJECT — x/y extent ratio {ratio:.1f} '
-                    f'> {self._max_horizontal_ratio:.1f} '
-                    f'(x_spread={int(x_spread)}px y_spread={int(y_spread)}px) '
-                    f'— feature is near-horizontal'
-                )
-            return []
+            # if side:
+            #     self._log.warn(
+            #         f'[DIAG:fit] {side} REJECT — x/y extent ratio {ratio:.1f} '
+            #         f'> {self._max_horizontal_ratio:.1f} '
+            #         f'(x_spread={int(x_spread)}px y_spread={int(y_spread)}px) '
+            #         f'— feature is near-horizontal'
+            #     )
+            return [], None
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', np.RankWarning)
                 coeffs = np.polyfit(ys, xs + x_offset, self._poly_degree)
-            if side:
-                self._log.info(
-                    f'[DIAG:fit] {side} OK — {len(ys)} px  '
-                    f'y=[{int(ys.min())}..{int(ys.max())}]  '
-                    f'x=[{int(xs.min()) + x_offset}..{int(xs.max()) + x_offset}]  '
-                    f'coeffs=[{" ".join(f"{c:+.4e}" for c in coeffs)}]'
-                )
-            return coeffs.tolist()
+            # if side:
+            #     self._log.info(
+            #         f'[DIAG:fit] {side} OK — {len(ys)} px  '
+            #         f'y=[{int(ys.min())}..{int(ys.max())}]  '
+            #         f'x=[{int(xs.min()) + x_offset}..{int(xs.max()) + x_offset}]  '
+            #         f'coeffs=[{" ".join(f"{c:+.4e}" for c in coeffs)}]'
+            #     )
+            return coeffs.tolist(), (int(ys.min()), int(ys.max()))
         except (np.linalg.LinAlgError, ValueError) as exc:
             if side:
                 self._log.warn(f'[DIAG:fit] {side} REJECT — polyfit failed: {exc}')
-            return []
+            return [], None
+
+    @staticmethod
+    def _draw_lane_fit(frame: np.ndarray, coeffs, span, color) -> None:
+        """Draw a fitted lane polynomial x = f(y) over its fitted y-range."""
+        if not coeffs or span is None:
+            return
+        ys = np.arange(int(span[0]), int(span[1]) + 1, 4)
+        if ys.size < 2:
+            return
+        xs = np.polyval(coeffs, ys)
+        keep = (xs >= 0) & (xs < frame.shape[1])
+        pts = np.column_stack([xs[keep], ys[keep]]).astype(np.int32)
+        if len(pts) >= 2:
+            cv2.polylines(frame, [pts], False, color, 3)
 
     @staticmethod
     def _resolve_path(path: str, root: str) -> str:

@@ -103,9 +103,21 @@ class LaneGoalPublisher:
     SHARP_THRESHOLD to a value between CURVE_THRESHOLD and that observed peak.
     """
 
+    # ── Standalone debug mode ──────────────────────────────────────────────────
+    # True → run WITHOUT Nav2 / odometry: the rover is assumed fixed at the
+    # origin, goals are computed, logged and published as RViz markers, but
+    # NO NavigateToPose action is dispatched and recovery spins are disabled.
+    # Use when bench-testing with only lane_detection_node running.
+    # MUST be False for real driving.
+    DEBUG_STANDALONE: bool = False
+
     # ── Curvature thresholds ───────────────────────────────────────────────────
-    CURVE_THRESHOLD: float = 0.0014   # Gentle-curve regime starts here (pixels⁻¹)
-    SHARP_THRESHOLD: float = 0.0040   # Sharp / 90° turn regime starts here (pixels⁻¹)
+    # Measured on the perspective 1280x720 frame a STRAIGHT road already shows
+    # |a_C| up to ~1.3e-3 (perspective + fisheye residual), so the thresholds
+    # must sit above that. Drive a real curve/corner, read |a_C| from the
+    # [DIAG:geom] log, and tune from there.
+    CURVE_THRESHOLD: float = 0.0025   # Gentle-curve regime starts here (pixels⁻¹)
+    SHARP_THRESHOLD: float = 0.0070   # Sharp / 90° turn regime starts here (pixels⁻¹)
 
     # ── Look-ahead pixel row fraction of IMG_H ─────────────────────────────────
     # Smaller fraction → higher row in the image → further ahead on the ground.
@@ -258,9 +270,12 @@ class Physical:
     day-to-day driving behavior.
     """
 
-    # ── Ground patch visible in bird's-eye view ────────────────────────────────
-    GROUND_WIDTH_M:  float = 9.0   # Left-right extent of warped view (metres)
-    GROUND_HEIGHT_M: float = 5.0   # Forward extent of warped view (metres)
+    # ── Ground patch visible in the camera view ────────────────────────────────
+    GROUND_WIDTH_M:  float = 9.0    # Left-right extent of the view (metres)
+    # Forward extent: distance from the bottom image row to the top of the
+    # visible road. Sets goal distance: x_fwd = (1 - py/IMG_H) * this * 0.92.
+    # If goals land too close, raise it; too far, lower it.
+    GROUND_HEIGHT_M: float = 10.0
     LANE_WIDTH_M:    float = 6.0   # Physical lane width (metres) — measure on your track
 
     # ── Lateral bias trim ──────────────────────────────────────────────────────
