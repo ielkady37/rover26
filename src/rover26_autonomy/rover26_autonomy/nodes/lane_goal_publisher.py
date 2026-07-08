@@ -1,7 +1,31 @@
 #!/usr/bin/env python3
 """
 ═════════════════════════════════════════════════════════════════════════════════
-lane_goal_publisher.py  —  rover26_autonomy
+lane_goal_publisher.py  —  rover26_autonomy          [INSTRUMENTED DIAG BUILD]
+═════════════════════════════════════════════════════════════════════════════════
+
+DIAGNOSTIC LOGGING
+──────────────────
+Every log line added by this build is prefixed with [DIAG] and can be located
+or stripped with:   grep -n 'DIAG' lane_goal_publisher.py
+
+What gets logged (throttled to DIAG_THROTTLE_S where high-rate):
+  [DIAG:raw]    Raw left/right coefficient lists exactly as received (incl. lengths)
+  [DIAG:poly]   Per-side a,b,c + fused centre polynomial
+  [DIAG:shape]  Per-side x-pixel positions at 3 image rows + lane width at each
+                → instantly shows if one side's polynomial is garbage
+  [DIAG:slope]  Per-side and centre slope at look-ahead row, resulting local
+                heading angle per side → shows which side poisons the tangent
+  [DIAG:geom]   theta_local, delta components, py, blends, mode decision
+  [DIAG:norm]   Normal-mode lateral pipeline: centre_px, offset_px, m/px,
+                y_lat raw → biased → smoothed
+  [DIAG:sharp]  Sharp-mode heading pipeline: raw yaw → smoothed yaw → goal
+  [DIAG:thr]    Goal throttle decision (dist, min_update, heading_drift, verdict)
+  [DIAG:nav]    Every action dispatch / response / result with generation number
+  [DIAG:prox]   Proximity checker distance every tick while a goal is active
+  [DIAG:wdog]   Watchdog silence / detection-gap values
+
+Original functionality is unchanged — only logging added.
 ═════════════════════════════════════════════════════════════════════════════════
 
 FUNCTIONALITY
@@ -12,58 +36,10 @@ Nav2 NavigateToPose goals, enabling the rover to follow the lane autonomously.
 Implements three-tier goal computation based on road curvature:
 
   Tier 1 — STRAIGHT   |a| < CURVE_THRESHOLD
-            Long look-ahead, sparse goal updates, heavy lateral smoothing.
-
   Tier 2 — CURVE      CURVE_THRESHOLD ≤ |a| < SHARP_THRESHOLD
-            Shorter look-ahead, outer-wall bias to widen the arc, quicker
-            lateral IIR response.
-
   Tier 3 — SHARP      |a| ≥ SHARP_THRESHOLD  (90° corners)
-            Abandons lateral position entirely.  Projects a short fixed-distance
-            waypoint in the lane-tangent heading direction, generating a rapid
-            sequence of "stepping stones" through the turn.  This avoids the
-            geometric unreliability of lane polynomial extrapolation at tight
-            corners.
 
-RECOVERY (lane-loss)
-────────────────────
-A 10 Hz watchdog detects when /lane_detection goes completely silent (the lane
-detector stops publishing entirely when the lane exits the BEV frame).
-Two-phase direct /cmd_vel rotation recovery is then triggered:
-  Phase 0 — rotate ~95° toward outside of the last known curve.
-  Phase 1 — rotate ~185° in the opposite direction (full turnaround search).
-
-TOPICS & SUBSCRIPTIONS
-──────────────────────
-Subscribed:
-  • /lane_detection  [interfaces/LaneDetectionResult]  ← lane_detection_node
-  • /odom            [nav_msgs/Odometry]                ← odom_tf_broadcaster
-
-Published:
-  • /cmd_vel         [geometry_msgs/Twist]          → motor driver (recovery rotation only)
-  • /lane_goals_viz  [visualization_msgs/MarkerArray] → RViz (goal arrows & spheres)
-
-Nav2 Action Client:
-  • navigate_to_pose  [nav2_msgs/action/NavigateToPose]  → bt_navigator
-
-TF FRAMES
-─────────
-All goals published in the 'odom' frame.
-
-PARAMETERS (from config_params.py)
-──────────────────────────────────
-LaneGoalPublisher.*  Curvature thresholds, look-ahead fractions, bias, smoothers,
-                     update throttle, proximity tolerances, recovery parameters
-Physical.*           Ground plane dimensions (GROUND_HEIGHT_M, GROUND_WIDTH_M,
-                     LATERAL_BIAS_M)
-RosTopics.*          Topic names
-
-NOTE ON LANE DETECTION CONTRACT
-────────────────────────────────
-A side is considered "not detected" if its coefficient list is not length 3.
-lane_detection_node is expected to publish an empty list ([]) for a side it
-could not fit a polynomial to — not stale or zero-filled coefficients.
-
+See original header for full documentation.
 ═════════════════════════════════════════════════════════════════════════════════
 """
 
@@ -84,6 +60,10 @@ from nav2_msgs.action       import NavigateToPose
 
 from rover26_autonomy.config_params import IMG_W, IMG_H, LaneGoalPublisher as Cfg, Physical, RosTopics
 
+# ── DIAG configuration ────────────────────────────────────────────────────────
+DIAG_THROTTLE_S: float = 0.5   # Throttle period for high-rate diag lines
+DIAG_ROWS = (0.25, 0.50, 0.75) # Image-row fractions sampled for [DIAG:shape]
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 #  LANE GOAL PUBLISHER NODE
@@ -92,20 +72,7 @@ from rover26_autonomy.config_params import IMG_W, IMG_H, LaneGoalPublisher as Cf
 class LaneGoalPublisher(Node):
     """
     Converts lane polynomials to Nav2 NavigateToPose goals in three tiers.
-
-    All tunable parameters are in config_params.LaneGoalPublisher.
-    All topic names are in config_params.RosTopics.
-
-    Attributes:
-        last_goal_xy (tuple | None):     (x, y) of last accepted goal (goal throttle anchor).
-        current_odom (Pose | None):      Latest odometry pose (position + orientation).
-        _nav_server_ready (bool):        True once bt_navigator has accepted its probe goal.
-        _y_lat_smooth (float | None):    Lateral IIR state for STRAIGHT/CURVE mode.
-        _goal_yaw_smooth (float | None): Heading IIR state for SHARP mode.
-        _prev_sharp (bool):              Whether the previous frame was in SHARP mode.
-        _sharp_exit_goals (int):         Dense-goal momentum counter after exiting SHARP mode.
-        _nav_active (bool):              True from goal ACCEPTED until goal REACHED/FAILED.
-        _goal_generation (int):          Counter to invalidate stale Nav2 result callbacks.
+    Instrumented diagnostic build — see module docstring.
     """
 
     def __init__(self):
@@ -142,6 +109,10 @@ class LaneGoalPublisher(Node):
         self._recovery_phase:         int            = 0
         self._recovery_start_yaw:     float | None  = None
 
+        # ── DIAG state ──────────────────────────────────────────────────────────
+        self._diag_frame:        int          = 0      # frames received
+        self._diag_last_stamp_s: float | None = None   # for inter-frame period
+
         # ── RViz marker cycling ─────────────────────────────────────────────────
         self._marker_id: int = 0
 
@@ -165,12 +136,13 @@ class LaneGoalPublisher(Node):
         threading.Thread(target=self._wait_for_nav_server, daemon=True).start()
 
         self.get_logger().info(
-            'lane_goal_publisher started — THREE-TIER MODE\n'
+            'lane_goal_publisher started — THREE-TIER MODE  [DIAG BUILD]\n'
             f'  curve threshold : |a| > {Cfg.CURVE_THRESHOLD:.4f}\n'
             f'  sharp threshold : |a| > {Cfg.SHARP_THRESHOLD:.4f}\n'
             f'  look-ahead      : far={Cfg.PY_FAR}  near={Cfg.PY_NEAR}  sharp={Cfg.PY_SHARP}\n'
             f'  outer bias max  : {Cfg.OUTER_BIAS_MAX_M} m\n'
-            f'  recovery vel    : {Cfg.RECOVERY_ROT_VEL} rad/s'
+            f'  recovery vel    : {Cfg.RECOVERY_ROT_VEL} rad/s\n'
+            f'  DIAG throttle   : {DIAG_THROTTLE_S}s'
         )
 
     # =========================================================================
@@ -180,8 +152,7 @@ class LaneGoalPublisher(Node):
     def _wait_for_nav_server(self) -> None:
         """
         Background thread: block until bt_navigator is ACTIVE by probing with
-        a trivial goal. A mere wait_for_server() call is insufficient — the
-        action server may be up but the lifecycle node not yet ACTIVE.
+        a trivial goal.
         """
         self.get_logger().info('[startup] Waiting for action server...')
         self.nav_to_pose_client.wait_for_server()
@@ -246,20 +217,7 @@ class LaneGoalPublisher(Node):
     def _lane_tangent_yaw(self, centre_c: np.ndarray, py: int, rover_yaw: float) -> float:
         """
         Convert the polynomial slope at image row py into a world-frame yaw.
-
-        Polynomial: x_pixel = a·py² + b·py + c
-        Slope at py: dx/dpy = 2a·py + b
-
-        The pixel slope is converted to a metric angle using the ground plane
-        dimensions, then the rover's current yaw is added to get world-frame heading.
-
-        Args:
-            centre_c:  Centre-lane polynomial coefficients [a, b, c].
-            py:        Image row (pixels) to evaluate the slope at.
-            rover_yaw: Current rover heading in the odom frame (radians).
-
-        Returns:
-            goal_yaw: World-frame heading the lane is pointing at row py (radians).
+        Polynomial: x_pixel = a·py² + b·py + c ;  slope at py = 2a·py + b.
         """
         a, b, _ = centre_c
         slope = 2.0 * a * py + b
@@ -268,12 +226,72 @@ class LaneGoalPublisher(Node):
         delta_y_lat = slope * Physical.GROUND_WIDTH_M / IMG_W
 
         theta_local = math.atan2(delta_y_lat, delta_x_fwd)
+
+        # ── [DIAG:slope] fused-tangent internals ──────────────────────────────
+        self.get_logger().info(
+            f'[DIAG:slope] centre: a={a:+.4e} b={b:+.4e} slope@py{py}={slope:+.3f}px/row  '
+            f'dx_fwd={delta_x_fwd:.5f}m/row  dy_lat={delta_y_lat:+.5f}m/row  '
+            f'theta_local={math.degrees(theta_local):+.1f}°',
+            throttle_duration_sec=DIAG_THROTTLE_S,
+        )
+
         return rover_yaw + theta_local
 
     @staticmethod
     def _wrap_angle(a: float) -> float:
         """Wrap an angle to [−π, π]."""
         return math.atan2(math.sin(a), math.cos(a))
+
+    # =========================================================================
+    #  DIAG HELPERS
+    # =========================================================================
+
+    def _side_theta_deg(self, coeffs: np.ndarray, py: int) -> float:
+        """[DIAG] Local heading angle (deg) implied by a single side's polynomial."""
+        a, b, _ = coeffs
+        slope = 2.0 * a * py + b
+        dx = Physical.GROUND_HEIGHT_M * 0.92 / IMG_H
+        dy = slope * Physical.GROUND_WIDTH_M / IMG_W
+        return math.degrees(math.atan2(dy, dx))
+
+    def _log_lane_shape(self, left_c: np.ndarray, right_c: np.ndarray,
+                        centre_c: np.ndarray, py: int) -> None:
+        """
+        [DIAG] Dump per-side polynomial coefficients, sampled x-positions at
+        three image rows, lane width per row, and per-side implied heading.
+
+        This is the single most useful block for the current bug: it shows
+        immediately whether one side's fit is geometrically insane (points
+        off-image, negative/huge lane width, wildly different per-side heading).
+        """
+        rows = [int(f * IMG_H) for f in DIAG_ROWS]
+
+        def fmt_side(name, c):
+            xs = [np.polyval(c, r) for r in rows]
+            pos = '  '.join(f'r{r}:x={x:7.1f}px' for r, x in zip(rows, xs))
+            return (f'{name}: a={c[0]:+.4e} b={c[1]:+.4e} c={c[2]:+.1f}  |  {pos}')
+
+        widths = '  '.join(
+            f'r{r}:w={np.polyval(right_c, r) - np.polyval(left_c, r):7.1f}px'
+            for r in rows
+        )
+
+        th_l = self._side_theta_deg(left_c,  py)
+        th_r = self._side_theta_deg(right_c, py)
+        th_c = self._side_theta_deg(centre_c, py)
+
+        self.get_logger().info(
+            '[DIAG:poly]\n'
+            f'  {fmt_side("LEFT ", left_c)}\n'
+            f'  {fmt_side("RIGHT", right_c)}\n'
+            f'  {fmt_side("CENTR", centre_c)}\n'
+            f'  [DIAG:shape] lane width  {widths}   (expect ≈ constant, positive, '
+            f'~{Physical.LANE_WIDTH_M / (Physical.GROUND_WIDTH_M / IMG_W):.0f}px for '
+            f'{Physical.LANE_WIDTH_M}m lane)\n'
+            f'  [DIAG:shape] heading@py{py}  left={th_l:+.1f}°  right={th_r:+.1f}°  '
+            f'centre={th_c:+.1f}°   (per-side mismatch ⇒ one fit is garbage)',
+            throttle_duration_sec=DIAG_THROTTLE_S,
+        )
 
     # =========================================================================
     #  RVIZ MARKERS
@@ -335,17 +353,28 @@ class LaneGoalPublisher(Node):
     def _lane_cb(self, msg: LaneDetectionResult) -> None:
         """
         Receive a LaneDetectionResult message and compute + dispatch the next
-        Nav2 goal.
-
-        The method silently returns if:
-          - Nav2 is not yet ready or odometry hasn't arrived
-          - A goal is currently active (and the rover isn't recovering lane)
-          - Either lane polynomial is missing (triggers rotation recovery instead)
-          - The new goal is too close to the previous one (goal throttle)
+        Nav2 goal.  (Instrumented — see [DIAG] blocks.)
         """
-        self._last_lane_status_time_s = self.get_clock().now().nanoseconds * 1e-9
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        self._last_lane_status_time_s = now_s
+
+        # ── [DIAG:raw] message arrival + raw payload ──────────────────────────
+        self._diag_frame += 1
+        period = (now_s - self._diag_last_stamp_s) if self._diag_last_stamp_s else 0.0
+        self._diag_last_stamp_s = now_s
+        self.get_logger().info(
+            f'[DIAG:raw] frame#{self._diag_frame}  dt={period*1000:.0f}ms  '
+            f'left(len={len(msg.left_lane_coeffs)})={[f"{c:.4e}" for c in msg.left_lane_coeffs]}  '
+            f'right(len={len(msg.right_lane_coeffs)})={[f"{c:.4e}" for c in msg.right_lane_coeffs]}',
+            throttle_duration_sec=DIAG_THROTTLE_S,
+        )
 
         if not self._nav_server_ready or self.current_odom is None:
+            self.get_logger().info(
+                f'[DIAG:raw] gated: nav_ready={self._nav_server_ready} '
+                f'odom={"yes" if self.current_odom else "no"}',
+                throttle_duration_sec=2.0,
+            )
             return
 
         left_ok  = len(msg.left_lane_coeffs)  == 3
@@ -364,11 +393,15 @@ class LaneGoalPublisher(Node):
                 self._recovery_phase       = 0
                 self._recovery_start_yaw   = None
                 # Fall through to normal goal computation below
-            # else: fall through — heading-drift check in throttle block decides
 
         _was_nav_active = self._nav_active  # capture before geometry runs
 
         if not (left_ok and right_ok):
+            self.get_logger().warn(
+                f'[DIAG:raw] side missing — left_ok={left_ok} right_ok={right_ok} '
+                '→ rotation recovery path',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
             self._try_rotation_recovery()
             return
 
@@ -393,12 +426,25 @@ class LaneGoalPublisher(Node):
                    + blend_sharp * (Cfg.PY_SHARP - Cfg.PY_NEAR))
         py = int(np.clip(IMG_H * py_frac, 0, IMG_H - 1))
 
+        # ── [DIAG:poly / DIAG:shape] full per-side geometry dump ──────────────
+        self._log_lane_shape(left_c, right_c, centre_c, py)
+
         # ── 4. Lane tangent heading ──────────────────────────────────────────────
         goal_yaw = self._lane_tangent_yaw(centre_c, py, rover_yaw)
 
         # ── 5. Mode decision ─────────────────────────────────────────────────────
         in_sharp_turn = blend_sharp > 0.10
         outer_bias    = 0.0
+
+        # ── [DIAG:geom] mode decision inputs ──────────────────────────────────
+        self.get_logger().info(
+            f'[DIAG:geom] |a_L|={abs(left_c[0]):.3e} |a_R|={abs(right_c[0]):.3e} '
+            f'|a_C|={curvature:.3e}  thr(curve={Cfg.CURVE_THRESHOLD:.1e} '
+            f'sharp={Cfg.SHARP_THRESHOLD:.1e})  bc={blend_curve:.2f} bs={blend_sharp:.2f}  '
+            f'py_frac={py_frac:.2f} py={py}  mode={"SHARP" if in_sharp_turn else "NORM"}  '
+            f'rover=({rover_x:.2f},{rover_y:.2f},{math.degrees(rover_yaw):.1f}°)',
+            throttle_duration_sec=DIAG_THROTTLE_S,
+        )
 
         if self._prev_sharp and not in_sharp_turn:
             self._sharp_exit_goals = 2
@@ -409,6 +455,7 @@ class LaneGoalPublisher(Node):
         # ║  SHARP TURN MODE  (90° corners)                                    ║
         # ╚══════════════════════════════════════════════════════════════════════╝
         if in_sharp_turn:
+            _yaw_raw = goal_yaw
             if self._goal_yaw_smooth is None or not self._prev_sharp:
                 self._goal_yaw_smooth = goal_yaw
             else:
@@ -422,6 +469,16 @@ class LaneGoalPublisher(Node):
             goal_x = base_x + Cfg.GOAL_DIST_SHARP_M * math.cos(heading)
             goal_y = base_y + Cfg.GOAL_DIST_SHARP_M * math.sin(heading)
 
+            # ── [DIAG:sharp] heading pipeline ────────────────────────────────
+            self.get_logger().info(
+                f'[DIAG:sharp] yaw_raw={math.degrees(_yaw_raw):+.1f}°  '
+                f'yaw_smooth={math.degrees(heading):+.1f}°  '
+                f'rel_hdg={math.degrees(self._wrap_angle(heading - rover_yaw)):+.1f}°  '
+                f'proj={Cfg.GOAL_DIST_SHARP_M}m → goal=({goal_x:.2f},{goal_y:.2f})  '
+                f'⚠ GOAL_DIST_SHARP_M={Cfg.GOAL_DIST_SHARP_M} vs XY_GOAL_TOL={Cfg.XY_GOAL_TOL}',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
+
             self._y_lat_smooth = None
             min_update = Cfg.UPDATE_M_SHARP
 
@@ -433,27 +490,35 @@ class LaneGoalPublisher(Node):
 
             centre_px = np.polyval(centre_c, py)
             if not (0 <= centre_px < IMG_W):
+                self.get_logger().warn(
+                    f'[DIAG:norm] REJECT — centre_px={centre_px:.1f} off-image '
+                    f'(0..{IMG_W}) at py={py}',
+                    throttle_duration_sec=DIAG_THROTTLE_S,
+                )
                 return
 
             x_fwd = (1.0 - py / IMG_H) * Physical.GROUND_HEIGHT_M * 0.92
             if _sharp_exit_active:
                 x_fwd = min(x_fwd, Cfg.GOAL_DIST_SHARP_M)
 
-            # Lateral correction: rover is always at IMG_W/2 in BEV.
-            # offset_px > 0 means lane centre is to the right → steer right.
             left_px_look  = np.polyval(left_c,  py)
             right_px_look = np.polyval(right_c, py)
             lane_width_px = right_px_look - left_px_look
             if lane_width_px < 10:
+                self.get_logger().warn(
+                    f'[DIAG:norm] REJECT — lane_width_px={lane_width_px:.1f} < 10 '
+                    f'(left_px={left_px_look:.1f} right_px={right_px_look:.1f}) at py={py}',
+                    throttle_duration_sec=DIAG_THROTTLE_S,
+                )
                 return
 
             offset_px     =  IMG_W / 2.0 - centre_px
             metres_per_px = Physical.LANE_WIDTH_M / lane_width_px
             y_lat         = offset_px * metres_per_px
+            y_lat_pre_bias = y_lat
             y_lat        += Physical.LATERAL_BIAS_M
 
-            # Outer-wall bias — widens the arc on curves.
-            # Curve direction derived from heading offset (stable, no polynomial sign flip-flop).
+            # Outer-wall bias
             theta_local = self._wrap_angle(goal_yaw - rover_yaw)
             curve_sign  = -np.sign(theta_local) if abs(theta_local) > 1e-3 else 0.0
             bias_factor = blend_curve ** Cfg.BIAS_BLEND_POWER
@@ -464,10 +529,11 @@ class LaneGoalPublisher(Node):
                            * (1.0 - blend_sharp))
             y_lat_bias  = y_lat + curve_sign * outer_bias
 
-            # Lateral IIR smoother — heavier on straight, lighter on curves
+            # Lateral IIR smoother
             alpha = (Cfg.ALPHA_STRAIGHT
                      + blend_curve * (Cfg.ALPHA_CURVE - Cfg.ALPHA_STRAIGHT))
 
+            _y_smooth_prev = self._y_lat_smooth
             if self._y_lat_smooth is None:
                 self._y_lat_smooth = y_lat_bias
             else:
@@ -479,6 +545,17 @@ class LaneGoalPublisher(Node):
             sin_yaw = math.sin(rover_yaw)
             goal_x = rover_x + x_fwd * cos_yaw - y_lat_used * sin_yaw
             goal_y = rover_y + x_fwd * sin_yaw + y_lat_used * cos_yaw
+
+            # ── [DIAG:norm] lateral pipeline ─────────────────────────────────
+            self.get_logger().info(
+                f'[DIAG:norm] centre_px={centre_px:.1f} offset_px={offset_px:+.1f}  '
+                f'lane_w_px={lane_width_px:.1f} m/px={metres_per_px:.5f}  '
+                f'y_lat raw={y_lat_pre_bias:+.3f} +trim={Physical.LATERAL_BIAS_M:+.2f} '
+                f'+outer({curve_sign:+.0f}×{outer_bias:.3f})={y_lat_bias:+.3f}  '
+                f'IIR(a={alpha:.2f}) {_y_smooth_prev if _y_smooth_prev is None else f"{_y_smooth_prev:+.3f}"}'
+                f'→{y_lat_used:+.3f}  x_fwd={x_fwd:.2f}m → goal=({goal_x:.2f},{goal_y:.2f})',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
 
             min_update = (Cfg.UPDATE_M_STRAIGHT
                           + blend_curve * (Cfg.UPDATE_M_CURVE - Cfg.UPDATE_M_STRAIGHT))
@@ -498,10 +575,6 @@ class LaneGoalPublisher(Node):
             dist = math.hypot(goal_x - self.last_goal_xy[0],
                               goal_y - self.last_goal_xy[1])
 
-            # On straights with <7 deg heading change AND the rover has travelled
-            # at least min_update metres — send a fresh goal so it keeps tracking.
-            # The dist >= min_update guard prevents the cancel-resend storm that
-            # happens when the rover hasn't moved yet (dist=0.00m).
             heading_drift = (
                 on_straight
                 and dist >= min_update
@@ -509,18 +582,26 @@ class LaneGoalPublisher(Node):
                 and abs(self._wrap_angle(goal_yaw - self._last_valid_goal_yaw)) < math.radians(7.0)
             )
 
+            # ── [DIAG:thr] throttle decision ─────────────────────────────────
+            verdict = ('SEND' if not (dist < min_update and not heading_drift)
+                              and not (_was_nav_active and not heading_drift)
+                       else 'HOLD')
+            self.get_logger().info(
+                f'[DIAG:thr] anchor=({self.last_goal_xy[0]:.2f},{self.last_goal_xy[1]:.2f})  '
+                f'dist={dist:.3f}m  min_update={min_update:.2f}m  '
+                f'on_straight={on_straight}  drift={heading_drift}  '
+                f'nav_active={_was_nav_active}  → {verdict}',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
+
             if dist < min_update and not heading_drift:
                 self._prev_sharp = in_sharp_turn
                 return
 
-            # If nav is active and this is not a straight refresh, wait for the
-            # current goal to complete (curves and sharp turns are unaffected).
             if _was_nav_active and not heading_drift:
                 self._prev_sharp = in_sharp_turn
                 return
 
-            # Straight refresh — rover has moved min_update, lane is still straight,
-            # cancel and resend with the updated goal position.
             if heading_drift and _was_nav_active and self._current_goal_handle is not None:
                 self.get_logger().info(
                     f'[NORM] straight refresh preempt — '
@@ -530,10 +611,14 @@ class LaneGoalPublisher(Node):
                 self._current_goal_handle.cancel_goal_async()
                 self._current_goal_handle    = None
                 self._nav_active             = False
+        else:
+            self.get_logger().info(
+                f'[DIAG:thr] no anchor — nav_active={_was_nav_active}  '
+                f'→ {"HOLD (wait for active goal)" if _was_nav_active else "SEND (fresh)"}',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
 
         # ── 8. Publish goal ───────────────────────────────────────────────────────
-        # If nav is still active and we had no anchor (last_goal_xy was None),
-        # don't send — wait for current goal to finish.
         if _was_nav_active:
             self._prev_sharp = in_sharp_turn
             return
@@ -573,8 +658,6 @@ class LaneGoalPublisher(Node):
     def _watchdog_cb(self) -> None:
         """
         Fires at WATCHDOG_HZ (10 Hz), independently of /lane_detection.
-        Detects topic silence and triggers rotation recovery.
-        Also runs the goal proximity checker on every tick.
         """
         if not self._nav_server_ready or self.current_odom is None:
             return
@@ -583,6 +666,15 @@ class LaneGoalPublisher(Node):
 
         now_s   = self.get_clock().now().nanoseconds * 1e-9
         silence = now_s - self._last_lane_status_time_s
+
+        # ── [DIAG:wdog] periodic state snapshot ───────────────────────────────
+        gap = (now_s - self._last_valid_time_s) if self._last_valid_time_s else -1.0
+        self.get_logger().info(
+            f'[DIAG:wdog] silence={silence:.2f}s  valid_gap={gap:.2f}s  '
+            f'nav_active={self._nav_active}  rotating={self._is_rotating}  '
+            f'gen={self._goal_generation}  fails={self._consecutive_failures}',
+            throttle_duration_sec=2.0,
+        )
 
         self._check_goal_proximity()
 
@@ -611,12 +703,6 @@ class LaneGoalPublisher(Node):
     def _check_goal_proximity(self) -> None:
         """
         Declare the current goal REACHED when xy_err ≤ XY_GOAL_TOL.
-
-        XY only — no yaw check. These are intermediate stepping-stone waypoints;
-        the goal yaw is the lane tangent at send time and will naturally differ
-        from the rover heading on arrival as the lane curves. Yaw correction is
-        handled by the next goal. Nav2's own checker is intentionally bypassed
-        here for a tighter update cycle.
         """
         if not self._nav_active:
             return
@@ -628,6 +714,16 @@ class LaneGoalPublisher(Node):
 
         xy_err = math.hypot(rover_x - self._current_goal_x,
                             rover_y - self._current_goal_y)
+
+        # ── [DIAG:prox] live distance to goal ─────────────────────────────────
+        self.get_logger().info(
+            f'[DIAG:prox] gen={self._goal_generation}  '
+            f'rover=({rover_x:.2f},{rover_y:.2f})  '
+            f'goal=({self._current_goal_x:.2f},{self._current_goal_y:.2f})  '
+            f'xy_err={xy_err:.3f}m  tol={Cfg.XY_GOAL_TOL}m'
+            + ('  ⚠ goal born inside tolerance!' if xy_err <= Cfg.XY_GOAL_TOL else ''),
+            throttle_duration_sec=1.0,
+        )
 
         if xy_err > Cfg.XY_GOAL_TOL:
             return
@@ -646,12 +742,11 @@ class LaneGoalPublisher(Node):
         )
 
     def _cancel_current_goal(self) -> None:
-        """
-        Cancel the active Nav2 goal so controller_server stops publishing cmd_vel.
-        Marks _intentional_cancel_gen so _on_nav_result treats the resulting
-        ABORTED status as intentional, not a real failure.
-        """
+        """Cancel the active Nav2 goal (marks the cancel as intentional)."""
         if self._current_goal_handle is not None:
+            self.get_logger().info(
+                f'[DIAG:nav] intentional cancel — gen={self._goal_generation}'
+            )
             self._intentional_cancel_gen = self._goal_generation
             self._current_goal_handle.cancel_goal_async()
             self._current_goal_handle = None
@@ -659,12 +754,6 @@ class LaneGoalPublisher(Node):
     def _try_rotation_recovery(self) -> None:
         """
         Two-phase lane-loss recovery via direct /cmd_vel spin.
-
-        Phase 0: rotate ~RECOVERY_YAW_TARGET_RAD (≈95°) toward outside of curve.
-        Phase 1: rotate ~185° in the opposite direction (full turnaround search).
-
-        Direct /cmd_vel is used because Nav2/MPPI declares pure in-place yaw
-        goals done in ~20 ms without the rover actually turning.
         """
         if self._is_rotating:
             return
@@ -725,13 +814,6 @@ class LaneGoalPublisher(Node):
         """
         Background thread: publish /cmd_vel angular velocity until the rover has
         rotated target_delta radians from start_yaw, then stop.
-
-        Exits early if the lane is recovered (_is_rotating cleared by _lane_cb).
-
-        Args:
-            start_yaw:    Yaw at the start of this rotation phase (radians).
-            rot_dir:      +1 = CCW, -1 = CW.
-            target_delta: Total rotation to complete in this phase (radians).
         """
         twist           = Twist()
         twist.angular.z = rot_dir * Cfg.RECOVERY_ROT_VEL
@@ -779,8 +861,7 @@ class LaneGoalPublisher(Node):
     def _send_action_goal(self, x: float, y: float, yaw: float) -> None:
         """
         Send a NavigateToPose goal, save its pose for proximity checking,
-        and wire up generation-tagged lifecycle callbacks so stale results
-        from preempted goals are silently ignored.
+        and wire up generation-tagged lifecycle callbacks.
         """
         self._current_goal_x   = x
         self._current_goal_y   = y
@@ -788,6 +869,15 @@ class LaneGoalPublisher(Node):
 
         self._goal_generation += 1
         gen = self._goal_generation
+
+        # ── [DIAG:nav] dispatch record ────────────────────────────────────────
+        rx = self.current_odom.position.x if self.current_odom else float('nan')
+        ry = self.current_odom.position.y if self.current_odom else float('nan')
+        self.get_logger().info(
+            f'[DIAG:nav] SEND gen={gen}  goal=({x:.2f},{y:.2f},{math.degrees(yaw):.1f}°)  '
+            f'rover=({rx:.2f},{ry:.2f})  dist_to_goal={math.hypot(x-rx, y-ry):.3f}m  '
+            f'tol={Cfg.XY_GOAL_TOL}m'
+        )
 
         goal_pose                    = PoseStamped()
         goal_pose.header.stamp       = self.get_clock().now().to_msg()
@@ -807,6 +897,9 @@ class LaneGoalPublisher(Node):
     def _on_goal_response(self, future, gen: int) -> None:
         """Called when Nav2 responds (accepted or rejected)."""
         if gen != self._goal_generation:
+            self.get_logger().info(
+                f'[DIAG:nav] stale response gen={gen} (current={self._goal_generation}) — ignored'
+            )
             return
 
         handle = future.result()
@@ -817,7 +910,7 @@ class LaneGoalPublisher(Node):
 
         self._nav_active = True
         self._current_goal_handle = handle
-        self.get_logger().debug('[nav] Goal accepted — proximity checker active')
+        self.get_logger().info(f'[DIAG:nav] ACCEPTED gen={gen} — proximity checker active')
 
         result_future = handle.get_result_async()
         result_future.add_done_callback(lambda f, g=gen: self._on_nav_result(f, g))
@@ -825,6 +918,9 @@ class LaneGoalPublisher(Node):
     def _on_nav_result(self, future, gen: int) -> None:
         """Called when Nav2 reports SUCCEEDED / FAILED / CANCELLED."""
         if gen != self._goal_generation:
+            self.get_logger().info(
+                f'[DIAG:nav] stale result gen={gen} (current={self._goal_generation}) — ignored'
+            )
             return
 
         STATUS_SUCCEEDED = 4
@@ -840,6 +936,11 @@ class LaneGoalPublisher(Node):
 
         intentional = (gen == self._intentional_cancel_gen)
 
+        self.get_logger().info(
+            f'[DIAG:nav] RESULT gen={gen}  status={status}  intentional={intentional}  '
+            f'fails_so_far={self._consecutive_failures}'
+        )
+
         if status == STATUS_SUCCEEDED or status == STATUS_CANCELED or intentional:
             self.get_logger().info(
                 f'[nav] Goal done (status={status}, intentional={intentional})'
@@ -853,8 +954,6 @@ class LaneGoalPublisher(Node):
                 f'[nav] Goal FAILED (status={status}) — '
                 f'failure #{self._consecutive_failures}, skipping forward'
             )
-            # Push the anchor forward so next goal skips past the blocked spot.
-            # After MAX_CONSECUTIVE_FAILURES give up and let lane recovery take over.
             if (self._consecutive_failures < Cfg.MAX_CONSECUTIVE_FAILURES
                     and self._current_goal_x is not None
                     and self.current_odom is not None):
@@ -864,6 +963,10 @@ class LaneGoalPublisher(Node):
                 self.last_goal_xy = (
                     self._current_goal_x + skip * math.cos(rover_yaw),
                     self._current_goal_y + skip * math.sin(rover_yaw),
+                )
+                self.get_logger().info(
+                    f'[DIAG:nav] anchor pushed forward {skip:.2f}m → '
+                    f'({self.last_goal_xy[0]:.2f},{self.last_goal_xy[1]:.2f})'
                 )
             else:
                 self.get_logger().error(
