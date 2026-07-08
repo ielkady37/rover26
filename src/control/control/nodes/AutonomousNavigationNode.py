@@ -68,16 +68,12 @@ class AutonomousNavigationNode(LifecycleNode):
             )
             self.navigation_service = Navigation(deadzone=deadzone, max_pwm=max_pwm)
 
-            # Heading-assist PID: corrects drift only while Nav2 is commanding
-            # near-straight motion. Reuses the PID_PARAMS config block with its
-            # own dedicated gain keys so it doesn't fight ManualNavigationNode's
-            # heading-hold gains.
             pid_data = conf.fetchData(Configurator.PID_PARAMS)
             if not pid_data:
                 pid_data = {}
-            hp_kp = float(pid_data.get('auto_heading_KP', 0.0))
-            hp_ki = float(pid_data.get('auto_heading_KI', 0.0))
-            hp_kd = float(pid_data.get('auto_heading_KD', 0.0))
+            hp_kp = float(pid_data.get('yaw_KP', 0.0))
+            hp_ki = float(pid_data.get('yaw_KI', 0.0))
+            hp_kd = float(pid_data.get('yaw_KD', 0.0))
             self.heading_pid = PIDController(kp=hp_kp, ki=hp_ki, kd=hp_kd)
 
             # 3. Setup Publishers and Subscribers
@@ -230,7 +226,7 @@ class AutonomousNavigationNode(LifecycleNode):
 
     def publish_safe_stop(self):
         try:
-            msg = ActuatorCommand()  # ← ADD THIS LINE
+            msg = ActuatorCommand() 
             msg.m1_speed = float(0.0)
             msg.m1_dir   = int(0)
             msg.m1_brake = int(1)
