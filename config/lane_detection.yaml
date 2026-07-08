@@ -13,3 +13,12 @@ lane_ema_thresh: 0.0
 
 # Polynomial degree for lane coefficient fitting (2 = quadratic)
 poly_degree: 2
+
+# Fit sanity gates — reject mask blobs that cannot be a lane line.
+# min_y_spread_frac: lane pixels must span at least this fraction of the
+#   frame height vertically (rejects horizontal bands like the fisheye
+#   undistortion border, which fit with enormous fake curvature).
+# max_horizontal_ratio: reject when the blob's x-extent / y-extent exceeds
+#   this ratio (a real lane line is predominantly vertical in the image).
+min_y_spread_frac: 0.15
+max_horizontal_ratio: 5.0

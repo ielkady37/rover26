@@ -161,9 +161,17 @@ def main(args=None):
     signal.signal(signal.SIGTERM, _on_shutdown)
 
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        node.request_shutdown("KeyboardInterrupt received - stopping streams.")
+        while rclpy.ok():
+            try:
+                rclpy.spin(node)
+                break
+            except KeyboardInterrupt:
+                node.request_shutdown("KeyboardInterrupt received - stopping streams.")
+                break
+            except Exception as exc:
+                # An invalid lifecycle request raises out of the executor and
+                # would kill the process — log and keep spinning instead.
+                node.get_logger().error(f'spin error (continuing): {exc}')
     finally:
         node.request_shutdown("Finalizing node shutdown.")
         node.destroy_node()

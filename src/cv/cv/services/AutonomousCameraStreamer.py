@@ -5,6 +5,7 @@ import numpy as np
 from typing import Optional
 from dataclasses import dataclass
 from utils.Configurator import Configurator
+from utils.Logger import RoverLogger
 
 @dataclass
 class MonoFrame:
@@ -21,13 +22,18 @@ class StereoFrame:
 class AutonomousCameraStreamer:
     _OPEN_RETRY_INTERVAL = 0.5   # seconds between retries
     _OPEN_TIMEOUT = 10.0         # total seconds before giving up
+    _RECONNECT_AFTER_S = 2.0     # continuous read-failure time before reopening
 
     def __init__(self, name: str, config: dict):
         self._name = name
         self._config = config
         self._is_stereo: bool = config.get('is_stereo', False)
+        self._log = RoverLogger()
 
         self._cap: Optional[cv2.VideoCapture] = None
+        # Dropout tracking: wall-clock time of the first failed read in the
+        # current failure streak, or None while reads are healthy.
+        self._fail_start: Optional[float] = None
 
         # Mono calibration maps
         self._mono_map1: Optional[np.ndarray] = None
@@ -76,29 +82,68 @@ class AutonomousCameraStreamer:
                 self._cap = cap
                 self._apply_config()
                 self._load_calibration()
+                self._log.succ(f'Camera "{self._name}" opened ({index})')
                 return True
             cap.release()
             time.sleep(self._OPEN_RETRY_INTERVAL)
 
+        self._log.err(
+            f'Camera "{self._name}" failed to open ({index}) '
+            f'within {self._OPEN_TIMEOUT:.0f}s'
+        )
         return False
 
     def read(self) -> Optional[object]:
         """
         Reads the next frame(s).
         Returns a MonoFrame for normal cameras or a StereoFrame for stereo
-        cameras. Returns None if the read fails.
+        cameras. Returns None if the read fails; after _RECONNECT_AFTER_S of
+        continuous failures the capture is released and reopened (USB
+        cameras commonly need a full reopen after a bus dropout).
         """
         if self._cap is None or not self._cap.isOpened():
+            self._on_read_failure('capture not open')
             return None
 
         ret, frame = self._cap.read()
         if not ret or frame is None:
+            self._on_read_failure('cap.read() returned no frame')
             return None
+
+        if self._fail_start is not None:
+            self._log.succ(
+                f'Camera "{self._name}" recovered after '
+                f'{time.time() - self._fail_start:.1f}s of failed reads'
+            )
+            self._fail_start = None
 
         if self._is_stereo:
             return self._process_stereo(frame)
         else:
             return self._process_mono(frame)
+
+    def _on_read_failure(self, reason: str) -> None:
+        """Track a failed read; reopen the camera after a sustained streak."""
+        now = time.time()
+        if self._fail_start is None:
+            self._fail_start = now
+            self._log.warn(f'Camera "{self._name}" read failed ({reason})')
+            return
+
+        if now - self._fail_start < self._RECONNECT_AFTER_S:
+            return
+
+        self._log.err(
+            f'Camera "{self._name}" dead for '
+            f'{now - self._fail_start:.1f}s ({reason}) — reopening'
+        )
+        self.release()
+        if self.open():
+            self._fail_start = None
+        else:
+            # open() already logged the failure; restart the streak window so
+            # the next reopen attempt happens after another full interval.
+            self._fail_start = time.time()
 
     def release(self) -> None:
         if self._cap is not None:
@@ -233,7 +278,9 @@ class AutonomousCameraStreamer:
                 else:
                     self._load_mono_calibration(data)
         except Exception as exc:
-            pass
+            self._log.err(
+                f'Camera "{self._name}" calibration load failed ({cal_path}): {exc}'
+            )
 
     def _load_mono_calibration(self, data: np.lib.npyio.NpzFile) -> None:
         required = {'K', 'D'}

@@ -1,5 +1,5 @@
 fisheye_camera:
-  index: /dev/video0
+  index: /home/mansour/Desktop/lane_/fisheye_recording.mp4
   width: 1280
   height: 720
   fps: 30

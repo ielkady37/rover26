@@ -100,14 +100,14 @@ class ManualCameraStreamer:
     def _setup_mjpg(self):
         print(f"Initializing camera '{self.cameraIndex}' with MJPEG format...")
         os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "video_codec;mjpeg"
-        capture = cv2.VideoCapture(self.cameraIndex, cv2.CAP_V4L2)
+        capture = cv2.VideoCapture(self.cameraInde)
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
         capture.set(cv2.CAP_PROP_FOURCC, fourcc)
         return capture
 
     def _setup_yuyv(self):
         print(f"Initializing camera '{self.cameraIndex}' from YUYV profile...")
-        capture = cv2.VideoCapture(self.cameraIndex, cv2.CAP_V4L2)
+        capture = cv2.VideoCapture(self.cameraIndex)
         mjpg_fourcc = cv2.VideoWriter_fourcc(*'MJPG')
         capture.set(cv2.CAP_PROP_FOURCC, mjpg_fourcc)
         if self._fourcc_to_str(capture) == 'MJPG':

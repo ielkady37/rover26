@@ -155,7 +155,16 @@ def main(args=None):
     rclpy.init(args=args)
     try:
         node = AutonomousNavigationNode()
-        rclpy.spin(node)
+        while rclpy.ok():
+            try:
+                rclpy.spin(node)
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as exc:
+                # An invalid lifecycle request raises out of the executor and
+                # would kill the process — log and keep spinning instead.
+                node.get_logger().error(f'spin error (continuing): {exc}')
     except KeyboardInterrupt:
         pass
     except Exception as e:

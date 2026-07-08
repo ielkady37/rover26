@@ -27,11 +27,20 @@ PotholeDetection   DORMANT  — blob filter thresholds, for a pothole_detection_
 """
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  IMAGE DIMENSIONS (bird's-eye view size — shared sizing reference)
+#  IMAGE DIMENSIONS (must match the frame size lane coefficients are fitted in)
 # ═══════════════════════════════════════════════════════════════════════════════
+# The cv-package LaneDetectionNode fits polynomials on the full undistorted
+# camera frame (cameras.yaml: 1280x720), NOT a 640x480 BEV warp like the old
+# rover26_autonomy lane_detection_node did. These MUST track the camera
+# resolution or every pixel→metre conversion in lane_goal_publisher is wrong
+# (image centre off by half a frame, look-ahead rows sampled in the top half).
+#
+# NOTE: with no BEV warp, the linear pixel→metre mapping via GROUND_*_M below
+# is only an approximation on a perspective image — good enough near the
+# bottom of the frame, increasingly wrong toward the horizon.
 
-IMG_WIDTH:  int = 640
-IMG_HEIGHT: int = 480
+IMG_WIDTH:  int = 1280
+IMG_HEIGHT: int = 720
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -99,11 +108,17 @@ class LaneGoalPublisher:
     SHARP_THRESHOLD: float = 0.0040   # Sharp / 90° turn regime starts here (pixels⁻¹)
 
     # ── Look-ahead pixel row fraction of IMG_H ─────────────────────────────────
-    # Smaller fraction → higher row in BEV image → further ahead on the ground.
-    # PY_FAR  = 0.2  → far look-ahead on straights (stable)
+    # Smaller fraction → higher row in the image → further ahead on the ground.
+    #
+    # IMPORTANT: the detection frame is a PERSPECTIVE image (no BEV warp), so
+    # lane pixels only exist below the horizon (~row 300/720 ≈ 0.42). Sampling
+    # above that extrapolates the polynomials outside their fitted range and
+    # produces garbage (negative lane widths, ±10 m lateral offsets). Keep all
+    # three fractions comfortably below the horizon.
+    # PY_FAR  = 0.60 → far look-ahead on straights (stable)
     # PY_NEAR = 0.72 → closer on curves (goal stays on the arc, not the chord)
     # PY_SHARP= 0.75 → very close stepping stones on sharp turns
-    PY_FAR:   float = 0.2
+    PY_FAR:   float = 0.60
     PY_NEAR:  float = 0.72
     PY_SHARP: float = 0.75
 
@@ -264,8 +279,8 @@ class Physical:
 #  CONVENIENCE ALIASES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-IMG_W: int = IMG_WIDTH    # Bird's-eye frame width (pixels) — matches lane_detection_node's BEV output
-IMG_H: int = IMG_HEIGHT   # Bird's-eye frame height (pixels)
+IMG_W: int = IMG_WIDTH    # Detection frame width (pixels) — matches LaneDetectionNode's undistorted frame
+IMG_H: int = IMG_HEIGHT   # Detection frame height (pixels)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

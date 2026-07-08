@@ -5,9 +5,11 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.task import Future
 
+from collections import deque
+
 from std_msgs.msg import String
-from lifecycle_msgs.srv import ChangeState
-from lifecycle_msgs.msg import Transition
+from lifecycle_msgs.srv import ChangeState, GetState
+from lifecycle_msgs.msg import Transition, State
 from nav2_msgs.action import NavigateToPose
 
 try:
@@ -60,6 +62,14 @@ class MissionManagerNode(Node):
         self.auto_client = self.create_client(ChangeState, '/autonomous_navigation_node/change_state')
         self.face_recognition_client = self.create_client(ChangeState, '/face_recognition_node/change_state')
         self.lane_detection_client = self.create_client(ChangeState, '/lane_detection_node/change_state')
+
+        # Lifecycle transition machinery: per-node FIFO queues so transitions
+        # to the same node run strictly one at a time, plus GetState clients
+        # to verify a transition is valid before sending it (see
+        # _change_lifecycle_state for why this matters).
+        self._get_state_clients: dict = {}
+        self._transition_queues: dict = {}
+        self._transition_busy: set = set()
 
         # 3. Setup Nav2 Action Client
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
@@ -161,20 +171,102 @@ class MissionManagerNode(Node):
         self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_CLEANUP, "FaceRecognition")
         self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_CLEANUP, "LaneDetection")
 
+    # Which primary state each transition may legally start from
+    # (rcl_lifecycle state machine rules).
+    _TRANSITION_VALID_FROM = {
+        Transition.TRANSITION_CONFIGURE:  (State.PRIMARY_STATE_UNCONFIGURED,),
+        Transition.TRANSITION_ACTIVATE:   (State.PRIMARY_STATE_INACTIVE,),
+        Transition.TRANSITION_DEACTIVATE: (State.PRIMARY_STATE_ACTIVE,),
+        Transition.TRANSITION_CLEANUP:    (State.PRIMARY_STATE_INACTIVE,),
+    }
+
     def _change_lifecycle_state(self, client: rclpy.client.Client, transition_id: int, node_label: str):
-        """Helper to send standard ROS 2 lifecycle transition requests."""
-        if not client.wait_for_service(timeout_sec=2.0):
-            self._log.warn(f"Lifecycle service {client.srv_name} not available.")
+        """Queue a lifecycle transition for *client*'s node.
+
+        Transitions to the same node run strictly one at a time, and each is
+        checked against the node's live state (via /get_state) before being
+        sent. Requesting a transition that is invalid for the current state
+        (e.g. ACTIVATE on an already-active node) raises an unhandled
+        RCLError inside the TARGET node on Jazzy and kills its process, so
+        those requests are skipped with a log line instead.
+        """
+        key = client.srv_name
+        self._transition_queues.setdefault(key, deque()).append(
+            (client, transition_id, node_label)
+        )
+        self._pump_transition_queue(key)
+
+    def _pump_transition_queue(self, key: str):
+        """Start the next queued transition for a node, if none is in flight."""
+        if key in self._transition_busy:
+            return
+        queue = self._transition_queues.get(key)
+        if not queue:
             return
 
+        client, transition_id, node_label = queue.popleft()
+        self._transition_busy.add(key)
+
+        if not client.wait_for_service(timeout_sec=2.0):
+            self._log.warn(f"Lifecycle service {client.srv_name} not available.")
+            self._finish_transition(key)
+            return
+
+        gs_client = self._get_state_client(client)
+        if gs_client is None or not gs_client.wait_for_service(timeout_sec=1.0):
+            # Cannot verify the node's state — send unchecked (old behaviour).
+            self._send_transition(key, client, transition_id, node_label)
+            return
+
+        future = gs_client.call_async(GetState.Request())
+        future.add_done_callback(
+            lambda f: self._on_state_checked(f, key, client, transition_id, node_label)
+        )
+
+    def _finish_transition(self, key: str):
+        self._transition_busy.discard(key)
+        self._pump_transition_queue(key)
+
+    def _get_state_client(self, change_client: rclpy.client.Client):
+        """Return (and cache) the GetState client matching a ChangeState client."""
+        srv_name = change_client.srv_name
+        if not srv_name.endswith('/change_state'):
+            return None
+        gs_name = srv_name[: -len('/change_state')] + '/get_state'
+        if gs_name not in self._get_state_clients:
+            self._get_state_clients[gs_name] = self.create_client(GetState, gs_name)
+        return self._get_state_clients[gs_name]
+
+    def _on_state_checked(self, future: Future, key: str, client: rclpy.client.Client,
+                          transition_id: int, node_label: str):
+        try:
+            current = future.result().current_state
+        except Exception as e:
+            self._log.warn(f"{node_label}: get_state failed ({e}) — sending transition unchecked.")
+            self._send_transition(key, client, transition_id, node_label)
+            return
+
+        valid_from = self._TRANSITION_VALID_FROM.get(transition_id)
+        if valid_from is not None and current.id not in valid_from:
+            self._log.info(
+                f'{node_label}: skipping transition {transition_id} — '
+                f'not valid from current state "{current.label}".'
+            )
+            self._finish_transition(key)
+            return
+
+        self._send_transition(key, client, transition_id, node_label)
+
+    def _send_transition(self, key: str, client: rclpy.client.Client,
+                         transition_id: int, node_label: str):
         req = ChangeState.Request()
         req.transition.id = transition_id
-        
+
         # Send async so we don't block the orchestrator
         future = client.call_async(req)
-        future.add_done_callback(lambda f: self._lifecycle_result_cb(f, node_label, transition_id))
+        future.add_done_callback(lambda f: self._lifecycle_result_cb(f, key, node_label, transition_id))
 
-    def _lifecycle_result_cb(self, future: Future, node_label: str, transition_id: int):
+    def _lifecycle_result_cb(self, future: Future, key: str, node_label: str, transition_id: int):
         """Handles the response from the lifecycle nodes."""
         try:
             response = future.result()
@@ -192,6 +284,8 @@ class MissionManagerNode(Node):
                 self._log.err(f"{node_label} FAILED to transition to: {state_str}.")
         except Exception as e:
             self._log.err(f"Lifecycle service call failed for {node_label}: {e}")
+        finally:
+            self._finish_transition(key)
 
     # CALLBACKS
     def mission_state_callback(self, msg: String):

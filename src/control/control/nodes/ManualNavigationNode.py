@@ -243,7 +243,16 @@ def main(args=None):
         if activate_result != TransitionCallbackReturn.SUCCESS:
             raise RuntimeError("ManualNavigationNode activation failed")
 
-        rclpy.spin(node)
+        while rclpy.ok():
+            try:
+                rclpy.spin(node)
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as exc:
+                # An invalid lifecycle request raises out of the executor and
+                # would kill the process — log and keep spinning instead.
+                node.get_logger().error(f'spin error (continuing): {exc}')
     except KeyboardInterrupt:
         pass
     except Exception as e:

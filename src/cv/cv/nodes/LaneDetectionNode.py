@@ -8,6 +8,8 @@ Subscribed:  /{camera_name}/uncalibrated  (sensor_msgs/Image, BEST_EFFORT)
 Published:   /lane_detection              (interfaces/LaneDetectionResult, RELIABLE)
 """
 
+import time
+
 import rclpy
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
@@ -20,6 +22,8 @@ from utils.Configurator import Configurator
 from utils.Logger import RoverLogger
 
 _QOS_DEPTH = 10
+# [DIAG] Log the per-frame line every Nth frame (state transitions always log)
+_DIAG_EVERY_N = 5
 
 
 class LaneDetectionNode(LifecycleNode):
@@ -33,6 +37,11 @@ class LaneDetectionNode(LifecycleNode):
         self._cam_name = ''
         self._cam_sub = None
         self._result_pub = None
+
+        # [DIAG] state
+        self._diag_frame = 0
+        self._diag_last_stamp = None      # monotonic time of previous frame
+        self._diag_last_state = None      # (left_ok, right_ok) of previous frame
 
     # ------------------------------------------------------------------
     # Lifecycle hooks
@@ -125,6 +134,11 @@ class LaneDetectionNode(LifecycleNode):
     # Frame callback
 
     def _on_frame(self, msg: Image) -> None:
+        self._diag_frame += 1
+        now = time.monotonic()
+        dt_ms = (now - self._diag_last_stamp) * 1000.0 if self._diag_last_stamp else 0.0
+        self._diag_last_stamp = now
+
         try:
             raw = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
@@ -136,6 +150,28 @@ class LaneDetectionNode(LifecycleNode):
         except Exception as exc:
             self._log.err(f'LaneDetectionNode: detect() failed: {exc}')
             return
+
+        # [DIAG] found/lost transitions — always logged, even between
+        # throttled frames, so intermittent dropouts are visible.
+        state = (len(left_coeffs) == 3, len(right_coeffs) == 3)
+        if state != self._diag_last_state:
+            self._log.warn(
+                f'[DIAG] frame#{self._diag_frame} lane state changed: '
+                f'left={"OK" if state[0] else "LOST"} '
+                f'right={"OK" if state[1] else "LOST"} '
+                f'(was {self._diag_last_state})'
+            )
+            self._diag_last_state = state
+
+        if self._diag_frame % _DIAG_EVERY_N == 1:
+            infer_ms = (time.monotonic() - now) * 1000.0
+            fps = f'~{1000.0 / dt_ms:.1f}fps' if dt_ms > 0 else 'first frame'
+            self._log.info(
+                f'[DIAG] frame#{self._diag_frame}  dt={dt_ms:.0f}ms ({fps})  '
+                f'detect={infer_ms:.0f}ms  img={raw.shape[1]}x{raw.shape[0]}  '
+                f'L={[f"{c:.4e}" for c in left_coeffs] or "NONE"}  '
+                f'R={[f"{c:.4e}" for c in right_coeffs] or "NONE"}'
+            )
 
         try:
             result = LaneDetectionResult()
@@ -155,9 +191,17 @@ def main(args=None) -> None:
     rclpy.init(args=args)
     node = LaneDetectionNode()
     try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
+        while rclpy.ok():
+            try:
+                rclpy.spin(node)
+                break
+            except KeyboardInterrupt:
+                break
+            except Exception as exc:
+                # An invalid lifecycle request (e.g. ACTIVATE while already
+                # active) is re-raised out of the executor and would kill the
+                # whole process — log it and keep spinning instead.
+                node.get_logger().error(f'spin error (continuing): {exc}')
     finally:
         node.destroy_node()
         if rclpy.ok():
