@@ -51,7 +51,7 @@ import numpy as np
 import rclpy
 from rclpy.node   import Node
 from rclpy.action import ActionClient
-from geometry_msgs.msg      import PoseStamped, Twist
+from geometry_msgs.msg      import Pose, PoseStamped, Twist
 from nav_msgs.msg           import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg           import ColorRGBA
@@ -133,7 +133,18 @@ class LaneGoalPublisher(Node):
         self.create_timer(1.0 / Cfg.WATCHDOG_HZ, self._watchdog_cb)
 
         # ── Nav server ready-check (background thread) ───────────────────────────
-        threading.Thread(target=self._wait_for_nav_server, daemon=True).start()
+        if Cfg.DEBUG_STANDALONE:
+            # Standalone bench mode: no Nav2, no odometry required. Assume the
+            # rover sits at the origin and never dispatch real goals.
+            self._nav_server_ready = True
+            self.get_logger().warn(
+                '⚠ DEBUG_STANDALONE=True — Nav2 gate bypassed, odometry faked '
+                'at origin, goals are LOGGED + published to RViz only, NOT '
+                'dispatched. Recovery spins disabled. Set '
+                'DEBUG_STANDALONE=False in config_params.py for real driving.'
+            )
+        else:
+            threading.Thread(target=self._wait_for_nav_server, daemon=True).start()
 
         self.get_logger().info(
             'lane_goal_publisher started — THREE-TIER MODE  [DIAG BUILD]\n'
@@ -369,6 +380,13 @@ class LaneGoalPublisher(Node):
             throttle_duration_sec=DIAG_THROTTLE_S,
         )
 
+        if Cfg.DEBUG_STANDALONE and self.current_odom is None:
+            # No odometry source running — pretend the rover is at the origin
+            # so the full geometry pipeline (and its DIAG logs) still runs.
+            fake = Pose()
+            fake.orientation.w = 1.0
+            self.current_odom = fake
+
         if not self._nav_server_ready or self.current_odom is None:
             self.get_logger().info(
                 f'[DIAG:raw] gated: nav_ready={self._nav_server_ready} '
@@ -546,6 +564,11 @@ class LaneGoalPublisher(Node):
             goal_x = rover_x + x_fwd * cos_yaw - y_lat_used * sin_yaw
             goal_y = rover_y + x_fwd * sin_yaw + y_lat_used * cos_yaw
 
+            # Heading = direction from rover to the goal point. The lane
+            # tangent slope exaggerates angles badly on a perspective image
+            # (a straight road read as ±30°), so don't use it for the pose.
+            goal_yaw = rover_yaw + math.atan2(y_lat_used, x_fwd)
+
             # ── [DIAG:norm] lateral pipeline ─────────────────────────────────
             self.get_logger().info(
                 f'[DIAG:norm] centre_px={centre_px:.1f} offset_px={offset_px:+.1f}  '
@@ -639,7 +662,18 @@ class LaneGoalPublisher(Node):
         self._recovery_start_yaw    = None
 
         self._publish_goal_marker(goal_x, goal_y, goal_yaw, sharp=in_sharp_turn)
-        self._send_action_goal(goal_x, goal_y, goal_yaw)
+        if Cfg.DEBUG_STANDALONE:
+            # No Nav2: clear the anchor so every frame recomputes and logs a
+            # fresh goal (the rover never moves, so the throttle would
+            # otherwise HOLD forever after the first goal).
+            self.last_goal_xy = None
+            self.get_logger().info(
+                f'[STANDALONE] goal=({goal_x:.2f},{goal_y:.2f},'
+                f'{math.degrees(goal_yaw):+.1f}°) — NOT dispatched',
+                throttle_duration_sec=DIAG_THROTTLE_S,
+            )
+        else:
+            self._send_action_goal(goal_x, goal_y, goal_yaw)
 
         self.get_logger().info(
             f'[{"SHARP" if in_sharp_turn else "NORM "}] '
@@ -755,6 +789,12 @@ class LaneGoalPublisher(Node):
         """
         Two-phase lane-loss recovery via direct /cmd_vel spin.
         """
+        if Cfg.DEBUG_STANDALONE:
+            self.get_logger().info(
+                '[STANDALONE] rotation recovery suppressed',
+                throttle_duration_sec=2.0,
+            )
+            return
         if self._is_rotating:
             return
         if self._nav_active:

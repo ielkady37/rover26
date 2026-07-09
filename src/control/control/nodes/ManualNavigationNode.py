@@ -234,15 +234,6 @@ def main(args=None):
     node = None
     try:
         node = ManualNavigationNode()
-
-        configure_result = node.on_configure(None)
-        if configure_result != TransitionCallbackReturn.SUCCESS:
-            raise RuntimeError("ManualNavigationNode configuration failed")
-
-        activate_result = node.on_activate(None)
-        if activate_result != TransitionCallbackReturn.SUCCESS:
-            raise RuntimeError("ManualNavigationNode activation failed")
-
         while rclpy.ok():
             try:
                 rclpy.spin(node)
