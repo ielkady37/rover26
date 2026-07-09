@@ -28,7 +28,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': False}],
     )
 
-    # LiDAR — RPLidar C1 
+    # LiDAR — RPLidar C1
     # Publishes /scan (LaserScan) in lidar_link frame at 10Hz
     sllidar_node = Node(
         package='sllidar_ros2',
@@ -82,7 +82,7 @@ def generate_launch_description():
         }]
     )
 
-    #odometry publisher node
+    # Odometry Publisher Node
     odom_publisher_node = Node(
         package='control',
         executable='odom_publisher_node',
@@ -92,6 +92,28 @@ def generate_launch_description():
             'wheel_radius': 0.075,
             'odom_frame': 'odom',
             'base_frame': 'base_footprint',
+        }]
+    )
+
+    # GPS Waypoint Node
+    # Converts lat/lon competition waypoints + live /gps fix into local ENU x,y.
+    # Publishes /waypoints_xy (latched) and /gps_xy — use gps_xy only to reach WP1,
+    # then switch position source to encoder/IMU dead reckoning (see odom_publisher_node).
+    # NOTE: this node subscribes to /gps (sensor_msgs/NavSatFix) but does not publish it —
+    # make sure your GPS driver node (e.g. a u-blox/NMEA driver) is included somewhere
+    # in your bringup, or this node will just sit waiting for a fix.
+    gps_waypoint_node = Node(
+        package='control',
+        executable='gps_waypoint_node',
+        output="screen",
+        name="gps_waypoint_node",
+        parameters=[{
+            'waypoint_lats': [0.0, 0.0, 0.0],
+            'waypoint_lons': [0.0, 0.0, 0.0],
+            'waypoint_ids': ['WP1', 'WP2', 'WP3'],
+            'map_frame': 'map',
+            'base_frame': 'base_footprint',
+            'wp1_tolerance_m': 1.5,
         }]
     )
 
@@ -138,7 +160,7 @@ def generate_launch_description():
         parameters=[{'port': 9090}]
     )
 
-    # cv nodes 
+    # cv nodes
     manual_camera_streaming_node = Node(
         package='cv',
         executable='manual_camera_streaming_node',
@@ -172,6 +194,7 @@ def generate_launch_description():
         joint_state_publisher_node,
         odom_publisher_node,
         sllidar_node,
+        gps_waypoint_node,
         joystick_node,
         esp_bridge_node,
         hoverboard_node,
