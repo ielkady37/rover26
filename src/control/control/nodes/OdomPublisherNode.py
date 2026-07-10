@@ -15,6 +15,13 @@ reports into wheel surface m/s. This depends on hoverboard firmware units
 drive a known distance, compare to what /odom reports, and adjust the
 scale until they match.
 
+COVARIANCE: pose/twist covariance below are placeholder starting values.
+They must be re-tuned against real hardware behavior (drift over a known
+run, encoder noise at speed, etc). Dimensions the robot can't observe in
+2D (z, roll, pitch, vy, vroll, vpitch) are marked with a high variance
+(1e6) so the UKF knows to ignore them rather than trust them as if they
+were perfectly known zeros.
+
 ROS2 parameters
 ───────────────
     wheel_radius  (float, 0.075)   metres
@@ -29,6 +36,7 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Quaternion
 from interfaces.msg import EncoderSpeeds
+from control.services.value_safety import sanitize_float
 
 def _yaw_to_quat(yaw: float) -> Quaternion:
     """Convert a 2D yaw angle (radians) to a geometry_msgs/Quaternion."""
@@ -43,6 +51,13 @@ def _wrap_angle(angle: float) -> float:
 
 # Calibrate against real hardware: drive a known distance and adjust.
 _ENC_SPEED_SCALE: float = 0.018
+
+# Placeholder covariance — TUNE against real encoder noise / drift.
+_POSE_COV_XY   = 0.01   # x, y variance (m^2)
+_POSE_COV_YAW  = 0.02   # yaw variance (rad^2)
+_TWIST_COV_VX  = 0.02   # vx variance ((m/s)^2)
+_TWIST_COV_VYAW = 0.02  # vyaw variance ((rad/s)^2)
+_UNOBSERVED    = 1.0e6  # marks a dimension this sensor cannot see
 
 
 class OdomPublisherNode(Node):
@@ -74,6 +89,10 @@ class OdomPublisherNode(Node):
         stamp = self.get_clock().now().to_msg()
         now_sec = stamp.sec + stamp.nanosec * 1e-9
 
+        # Always defined so message-building below never sees a stale/missing value.
+        v = 0.0
+        w = 0.0
+
         if self._prev_time_sec is None:
             self._prev_time_sec = now_sec
         else:
@@ -82,8 +101,8 @@ class OdomPublisherNode(Node):
 
             # Guard against startup glitches / clock jumps
             if 0.0 < dt < 1.0:
-                speed_r = float(msg.motor1_speed)
-                speed_l = float(msg.motor2_speed)
+                speed_r = sanitize_float(msg.motor1_speed, 0.0)
+                speed_l = sanitize_float(msg.motor2_speed, 0.0)
 
                 v_left  = speed_l * 2.0 * math.pi * wheel_radius * _ENC_SPEED_SCALE
                 v_right = speed_r * 2.0 * math.pi * wheel_radius * _ENC_SPEED_SCALE
@@ -111,6 +130,25 @@ class OdomPublisherNode(Node):
         odom_msg.pose.pose.position.y  = self._y
         odom_msg.pose.pose.position.z  = 0.0
         odom_msg.pose.pose.orientation = odom_quat
+
+        # Pose covariance (row-major 6x6: x,y,z,roll,pitch,yaw)
+        odom_msg.pose.covariance[0]  = _POSE_COV_XY    # x
+        odom_msg.pose.covariance[7]  = _POSE_COV_XY    # y
+        odom_msg.pose.covariance[14] = _UNOBSERVED     # z
+        odom_msg.pose.covariance[21] = _UNOBSERVED     # roll
+        odom_msg.pose.covariance[28] = _UNOBSERVED     # pitch
+        odom_msg.pose.covariance[35] = _POSE_COV_YAW   # yaw
+
+        odom_msg.twist.twist.linear.x  = v
+        odom_msg.twist.twist.angular.z = w
+
+        # Twist covariance (row-major 6x6: vx,vy,vz,vroll,vpitch,vyaw)
+        odom_msg.twist.covariance[0]  = _TWIST_COV_VX   # vx
+        odom_msg.twist.covariance[7]  = _UNOBSERVED     # vy — not meaningful for diff-drive
+        odom_msg.twist.covariance[14] = _UNOBSERVED     # vz
+        odom_msg.twist.covariance[21] = _UNOBSERVED     # vroll
+        odom_msg.twist.covariance[28] = _UNOBSERVED     # vpitch
+        odom_msg.twist.covariance[35] = _TWIST_COV_VYAW # vyaw
 
         self._odom_pub.publish(odom_msg)
 

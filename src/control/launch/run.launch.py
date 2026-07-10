@@ -22,13 +22,24 @@ def generate_launch_description():
         output='screen',
     )
 
+    wheel_joint_state_publisher_node = Node(
+    package='control',
+    executable='wheel_joint_state_publisher_node',
+    output="screen",
+    name="wheel_joint_state_publisher_node",
+    )
+    
     joint_state_publisher_node = Node(
         package='joint_state_publisher',
         executable='joint_state_publisher',
         name='joint_state_publisher',
         output='screen',
-        parameters=[{'use_sim_time': False}],
+        parameters=[{
+            'use_sim_time': False,
+            'source_list': ['/wheel_joint_states'],
+        }],
     )
+
 
     # LiDAR — RPLidar C1
     # Publishes /scan (LaserScan) in lidar_link frame at 10Hz
@@ -204,6 +215,7 @@ def generate_launch_description():
     return LaunchDescription([
         robot_state_publisher_node,
         joint_state_publisher_node,
+        # wheel_joint_state_publisher_node,
         odom_publisher_node,
         sllidar_node,
         gps_waypoint_node,

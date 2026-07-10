@@ -106,7 +106,7 @@ ukf_node:
     imu0_queue_size:                        20
 
     # ── Sigma point params ───────────────────
-    alpha: 0.005
+    alpha: 0.5
     kappa: 0.0
     beta:  2.0
 

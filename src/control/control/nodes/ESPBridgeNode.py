@@ -53,9 +53,29 @@ from control.DTOs.SensorData import SensorData
 from control.DTOs.ActuatorCommand import ActuatorCommand, MotorCommand
 from control.exceptions.SensorInitializationError import SensorInitializationError
 from control.exceptions.SensorReadError import SensorReadError
+from control.services.value_safety import sanitize_float, sanitize_quaternion
 
-# Unknown covariance sentinel (ROS2 REP-145: first element = -1 means unknown)
+# Unknown/unused covariance sentinel (ROS2 REP-145: first element = -1 means
+# unavailable). Only safe to use on a field that nothing downstream fuses.
+# robot_localization only reliably honors this convention for orientation —
+# NOT for angular_velocity or linear_acceleration — so those must carry real
+# positive variances whenever they're being fused by the UKF.
 _COV_UNKNOWN: list[float] = [-1.0] + [0.0] * 8
+
+# Placeholder positive covariances for FUSED IMU fields (orientation yaw,
+# angular_velocity z, per ukf.yaml's imu0_config). These are starting values,
+# not measured — recalibrate against a static/bench noise test on the real
+# BNO08x (e.g. log N seconds stationary, take variance per axis) and update.
+_ORIENTATION_COV: list[float] = [
+    0.01, 0.0,  0.0,
+    0.0,  0.01, 0.0,
+    0.0,  0.0,  0.02,
+]
+_ANGULAR_VEL_COV: list[float] = [
+    0.001, 0.0,   0.0,
+    0.0,   0.001, 0.0,
+    0.0,   0.0,   0.001,
+]
 
 
 class ESPBridgeNode(Node):
@@ -250,18 +270,23 @@ class ESPBridgeNode(Node):
         msg.header.stamp    = stamp
         msg.header.frame_id = self.get_parameter("imu_frame").value
 
-        msg.orientation = Quaternion(x=float(data.qx), y=float(data.qy),
-                                     z=float(data.qz), w=float(data.qw))
-        msg.orientation_covariance = _COV_UNKNOWN
+        qx, qy, qz, qw = sanitize_quaternion(
+            data.qx, data.qy, data.qz, data.qw
+        )
+        msg.orientation = Quaternion(x=qx, y=qy, z=qz, w=qw)
+        # Fused by the UKF (yaw) — needs a real positive variance, not -1.
+        msg.orientation_covariance = _ORIENTATION_COV
 
-        msg.angular_velocity.x = float(data.gx)
-        msg.angular_velocity.y = float(data.gy)
-        msg.angular_velocity.z = float(data.gz)
-        msg.angular_velocity_covariance = _COV_UNKNOWN
+        msg.angular_velocity.x = sanitize_float(data.gx, 0.0)
+        msg.angular_velocity.y = sanitize_float(data.gy, 0.0)
+        msg.angular_velocity.z = sanitize_float(data.gz, 0.0)
+        # Fused by the UKF (vyaw) — needs a real positive variance, not -1.
+        msg.angular_velocity_covariance = _ANGULAR_VEL_COV
 
-        msg.linear_acceleration.x = float(data.ax)
-        msg.linear_acceleration.y = float(data.ay)
-        msg.linear_acceleration.z = float(data.az)
+        msg.linear_acceleration.x = sanitize_float(data.ax, 0.0)
+        msg.linear_acceleration.y = sanitize_float(data.ay, 0.0)
+        msg.linear_acceleration.z = sanitize_float(data.az, 0.0)
+        # Not fused by the UKF — "-1 = unavailable" is fine here.
         msg.linear_acceleration_covariance = _COV_UNKNOWN
 
         self._imu_pub.publish(msg)
@@ -305,9 +330,9 @@ class ESPBridgeNode(Node):
         msg = EulerAngles()
         msg.header.stamp    = stamp
         msg.header.frame_id = self.get_parameter("imu_frame").value
-        msg.yaw   = float(data.yaw)
-        msg.pitch = float(data.pitch)
-        msg.roll  = float(data.roll)
+        msg.yaw   = sanitize_float(data.yaw, 0.0)
+        msg.pitch = sanitize_float(data.pitch, 0.0)
+        msg.roll  = sanitize_float(data.roll, 0.0)
         self._euler_pub.publish(msg)
 
     def destroy_node(self) -> None:
