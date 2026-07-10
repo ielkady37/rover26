@@ -51,9 +51,7 @@ def _wrap_angle(angle: float) -> float:
     """Wrap *angle* (radians) to [-π, π]."""
     return math.atan2(math.sin(angle), math.cos(angle))
 
-
-# Calibrate against real hardware: drive a known distance and adjust.
-_ENC_SPEED_SCALE: float = 0.018
+_ENC_SPEED_SCALE: float = 0.03
 
 
 class OdomPublisherNode(Node):

@@ -140,13 +140,13 @@ class LaneDetector:
         try:
             im0 = raw_frame.copy()
 
-            # --- Fisheye undistortion ---
-            if self._map1 is not None and self._map2 is not None:
-                im0 = cv2.remap(
-                    im0, self._map1, self._map2,
-                    interpolation=cv2.INTER_LINEAR,
-                    borderMode=cv2.BORDER_CONSTANT,
-                )
+            # # --- Fisheye undistortion ---
+            # if self._map1 is not None and self._map2 is not None:
+            #     im0 = cv2.remap(
+            #         im0, self._map1, self._map2,
+            #         interpolation=cv2.INTER_LINEAR,
+            #         borderMode=cv2.BORDER_CONSTANT,
+            #     )
 
             # --- Letterbox + tensor ---
             img, _, _ = CVUtilities.letterbox(im0, self._img_size, stride=32)
