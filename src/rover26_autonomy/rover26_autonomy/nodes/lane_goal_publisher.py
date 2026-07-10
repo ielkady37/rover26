@@ -41,6 +41,15 @@ Implements three-tier goal computation based on road curvature:
 
 See original header for full documentation.
 ═════════════════════════════════════════════════════════════════════════════════
+
+MISSION_SUBSTATE GATING  [PATCH]
+──────────────────────────────────
+This node now only drives while MissionManagerNode's /mission_substate reads
+"lane". Everywhere else (gps_waypoint / face_detection / lane_scan / manual)
+it stays fully dormant — no goal dispatch, no watchdog-driven rotation
+recovery — so it doesn't fight MissionManagerNode over /cmd_vel or Nav2
+during the other mission phases. Search for "[PATCH]" to find every change.
+═════════════════════════════════════════════════════════════════════════════════
 """
 
 import math
@@ -51,6 +60,7 @@ import numpy as np
 import rclpy
 from rclpy.node   import Node
 from rclpy.action import ActionClient
+from std_msgs.msg            import String  # [PATCH] mission_substate gating
 from geometry_msgs.msg      import Pose, PoseStamped, Twist
 from nav_msgs.msg           import Odometry
 from visualization_msgs.msg import Marker, MarkerArray
@@ -73,6 +83,7 @@ class LaneGoalPublisher(Node):
     """
     Converts lane polynomials to Nav2 NavigateToPose goals in three tiers.
     Instrumented diagnostic build — see module docstring.
+    Gated on /mission_substate == "lane"  [PATCH]
     """
 
     def __init__(self):
@@ -116,6 +127,11 @@ class LaneGoalPublisher(Node):
         # ── RViz marker cycling ─────────────────────────────────────────────────
         self._marker_id: int = 0
 
+        # ── Mission sub-state gate  [PATCH] ───────────────────────────────────
+        # Safe default so this node stays dormant until MissionManagerNode
+        # announces itself (avoids driving on stale/absent state at boot).
+        self._mission_substate: str = 'manual'
+
         # ── Nav2 action client ──────────────────────────────────────────────────
         self.nav_to_pose_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
 
@@ -128,6 +144,8 @@ class LaneGoalPublisher(Node):
             LaneDetectionResult, RosTopics.LANE_DETECTION, self._lane_cb, 10
         )
         self.create_subscription(Odometry, RosTopics.ODOM, self._odom_cb, 10)
+        # [PATCH] mission_substate gating — only drive while this reads "lane"
+        self.create_subscription(String, '/mission_substate', self._mission_substate_cb, 10)
 
         # ── Watchdog timer ───────────────────────────────────────────────────────
         self.create_timer(1.0 / Cfg.WATCHDOG_HZ, self._watchdog_cb)
@@ -147,14 +165,27 @@ class LaneGoalPublisher(Node):
             threading.Thread(target=self._wait_for_nav_server, daemon=True).start()
 
         self.get_logger().info(
-            'lane_goal_publisher started — THREE-TIER MODE  [DIAG BUILD]\n'
+            'lane_goal_publisher started — THREE-TIER MODE  [DIAG BUILD]  [SUBSTATE-GATED]\n'
             f'  curve threshold : |a| > {Cfg.CURVE_THRESHOLD:.4f}\n'
             f'  sharp threshold : |a| > {Cfg.SHARP_THRESHOLD:.4f}\n'
             f'  look-ahead      : far={Cfg.PY_FAR}  near={Cfg.PY_NEAR}  sharp={Cfg.PY_SHARP}\n'
             f'  outer bias max  : {Cfg.OUTER_BIAS_MAX_M} m\n'
             f'  recovery vel    : {Cfg.RECOVERY_ROT_VEL} rad/s\n'
-            f'  DIAG throttle   : {DIAG_THROTTLE_S}s'
+            f'  DIAG throttle   : {DIAG_THROTTLE_S}s\n'
+            f'  gated on        : /mission_substate == "lane"'
         )
+
+    # =========================================================================
+    #  MISSION SUB-STATE GATE  [PATCH]
+    # =========================================================================
+
+    def _mission_substate_cb(self, msg: String) -> None:
+        if msg.data != self._mission_substate:
+            self.get_logger().info(
+                f'[SUBSTATE] {self._mission_substate} -> {msg.data}'
+                + ('  (now driving)' if msg.data == 'lane' else '  (now dormant)')
+            )
+        self._mission_substate = msg.data
 
     # =========================================================================
     #  STARTUP / ODOMETRY
@@ -365,7 +396,12 @@ class LaneGoalPublisher(Node):
         """
         Receive a LaneDetectionResult message and compute + dispatch the next
         Nav2 goal.  (Instrumented — see [DIAG] blocks.)
+        Gated on /mission_substate == "lane"  [PATCH]
         """
+        # [PATCH] mission_substate gate — stay fully dormant outside LANE.
+        if self._mission_substate != 'lane':
+            return
+
         now_s = self.get_clock().now().nanoseconds * 1e-9
         self._last_lane_status_time_s = now_s
 
@@ -692,7 +728,15 @@ class LaneGoalPublisher(Node):
     def _watchdog_cb(self) -> None:
         """
         Fires at WATCHDOG_HZ (10 Hz), independently of /lane_detection.
+        Gated on /mission_substate == "lane"  [PATCH]
         """
+        # [PATCH] mission_substate gate — no rotation recovery, no proximity
+        # checking, outside LANE. This is the guard that stops this node's
+        # own recovery spin from fighting MissionManagerNode's FACE_DETECTION
+        # / LANE_SCAN spins over /cmd_vel.
+        if self._mission_substate != 'lane':
+            return
+
         if not self._nav_server_ready or self.current_odom is None:
             return
         if self._last_lane_status_time_s is None:
@@ -861,6 +905,15 @@ class LaneGoalPublisher(Node):
 
         try:
             while rclpy.ok():
+                # [PATCH] abandon an in-flight recovery spin the instant the
+                # mission moves us out of LANE (e.g. MissionManagerNode has
+                # taken over for GPS_WAYPOINT/FACE_DETECTION/LANE_SCAN) so we
+                # never keep publishing /cmd_vel out from under it.
+                if self._mission_substate != 'lane':
+                    self.cmd_vel_pub.publish(stop)
+                    self._is_rotating = False
+                    return
+
                 if not self._is_rotating:
                     self.cmd_vel_pub.publish(stop)
                     return

@@ -4,21 +4,25 @@ import math
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.task import Future
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
 
 from collections import deque
 
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
+from geometry_msgs.msg import Twist
+from nav_msgs.msg import Path, Odometry
 from lifecycle_msgs.srv import ChangeState, GetState
 from lifecycle_msgs.msg import Transition, State
 from nav2_msgs.action import NavigateToPose
+from interfaces.msg import LaneDetectionResult
 
 try:
     from interfaces.msg import TargetStatus
 except ImportError:
-    TargetStatus = None 
+    TargetStatus = None
 
 import time
-from control.services.MissionManager import MissionManager, Phase, VisionState
+from control.services.MissionManager import MissionManager, Phase, VisionState, SubState
 from utils.Configurator import Configurator
 from utils.Logger import RoverLogger
 
@@ -26,11 +30,21 @@ def _yaw_to_quat(yaw: float):
     half = yaw * 0.5
     return math.sin(half), math.cos(half)  # (z, w)
 
+# Latched QoS — matches GPSWaypointNode's /waypoints_xy publisher so this
+# node gets the one-time waypoint conversion even if it starts up later.
+_LATCHED_QOS = QoSProfile(
+    depth=1,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    history=QoSHistoryPolicy.KEEP_LAST,
+)
+
 class MissionManagerNode(Node):
     """
     The Supreme Orchestrator.
-    Handles Lifecycle Management (Configure, Activate, Deactivate, Cleanup), 
-    Nav2 Action goals, and Vision timeouts.
+    Handles Lifecycle Management (Configure, Activate, Deactivate, Cleanup),
+    Nav2 Action goals, GPS-waypoint navigation, and the autonomous sub-state
+    machine (LANE / GPS_WAYPOINT / FACE_DETECTION / LANE_SCAN).
     """
 
     def __init__(self):
@@ -41,11 +55,16 @@ class MissionManagerNode(Node):
         try:
             conf = Configurator()
             mission_data = conf.fetchData(Configurator.MISSION) or {}
-            
+
             waypoints = mission_data.get('waypoints', [])
             vision_timeout = float(mission_data.get('vision_timeout_sec', 120.0))
             min_confidence = float(mission_data.get('min_confidence_score', 0.80))
-            
+
+            # GPS-driven sub-state machine params
+            self._wp_arrival_tol_m = float(mission_data.get('wp_arrival_tolerance_m', 3.0))
+            self._spin_vel = float(mission_data.get('mission_spin_vel', 0.6))
+            self._nav_goal_retry_s = float(mission_data.get('nav_goal_retry_sec', 4.0))
+
             self.manager = MissionManager(
                 waypoints=waypoints,
                 vision_timeout_sec=vision_timeout,
@@ -73,15 +92,37 @@ class MissionManagerNode(Node):
 
         # 3. Setup Nav2 Action Client
         self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        self._gps_nav_active: bool = False
+        self._gps_goal_handle = None
+        self._gps_goal_generation: int = 0
+        self._last_gps_nav_send_s: float | None = None
 
         # 4. Setup Subscribers
         self.state_sub = self.create_subscription(String, '/mission_state', self.mission_state_callback, 10)
         if TargetStatus:
             self.target_sub = self.create_subscription(TargetStatus, '/target_status', self.target_status_callback, 10)
 
+        # GPS-waypoint + lane-status inputs for the sub-state machine.
+        self._waypoints_xy: list[tuple[float, float]] | None = None
+        self._gps_xy: tuple[float, float] | None = None
+        self._lane_valid: bool = False
+        self.waypoints_xy_sub = self.create_subscription(
+            Path, '/waypoints_xy', self._waypoints_xy_cb, _LATCHED_QOS
+        )
+        self.gps_xy_sub = self.create_subscription(Odometry, '/gps_xy', self._gps_xy_cb, 10)
+        self.lane_status_sub = self.create_subscription(
+            LaneDetectionResult, '/lane_detection', self._lane_status_cb, 10
+        )
+
+        # Sub-state broadcast — LaneGoalPublisher gates on this (only drives
+        # while it reads "lane") and stays fully dormant otherwise.
+        self.substate_pub = self.create_publisher(String, '/mission_substate', _LATCHED_QOS)
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self._publish_substate('manual')
+
         # 5. Setup Watchdog/Tick Timer (runs at 10Hz)
         self.tick_timer = self.create_timer(0.1, self.tick_callback)
-        
+
         # 6. Execute Boot Sequence
         self._log.info("Waiting for Navigation, Camera, and Perception nodes to come online...")
         self._execute_boot_sequence()
@@ -99,7 +140,7 @@ class MissionManagerNode(Node):
         self.face_recognition_client.wait_for_service(timeout_sec=5.0)
         self.lane_detection_client.wait_for_service(timeout_sec=5.0)
         self._log.info("Configuring Navigation, Camera, and Perception Nodes (Loading YAMLs, Shared Memory, etc.)...")
-        
+
         # 1. Send CONFIGURE to both (Moves them to 'Inactive')
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CONFIGURE, "ManualNav")
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_CONFIGURE, "AutoNav")
@@ -116,37 +157,44 @@ class MissionManagerNode(Node):
     def _execute_transition_to_manual(self):
         """Safely pauses Auto and spins up Manual."""
         self._log.info("Transitioning stack to MANUAL control...")
-        
+
+        self._stop_gps_waypoint_nav()
+        self._publish_twist(0.0)
+        self._publish_substate('manual')
+
         # 1. Deactivate Autonomous Node (Active -> Inactive)
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_DEACTIVATE, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
         self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
         self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_DEACTIVATE, "LaneDetection")
-        
+
         # 2. Activate Manual Node (Inactive -> Active)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_ACTIVATE, "ManualNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_ACTIVATE, "ManualCamera")
 
     def _execute_transition_to_auto(self):
-        """Safely pauses Manual, spins up Auto, and triggers Waypoint 1."""
+        """Safely pauses Manual, spins up Auto+LaneDetection, and starts on LANE."""
         self._log.info("Transitioning stack to AUTONOMOUS control...")
-        
+
         # 1. Deactivate Manual Node (Active -> Inactive)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_DEACTIVATE, "ManualNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
-        
-        # 2. Activate Autonomous Node (Inactive -> Active)
+
+        # 2. Activate Autonomous Node + LaneDetection (Inactive -> Active)
         # FaceRecognition stays Inactive here - it is only activated upon reaching WP2.
         self._change_lifecycle_state(self.auto_client, Transition.TRANSITION_ACTIVATE, "AutoNav")
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_ACTIVATE, "AutoCamera")
         self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_ACTIVATE, "LaneDetection")
 
-        # 3. Ensure Nav2 is ready, then dispatch the first waypoint
+        # 3. Ensure Nav2 is ready before we might need it for GPS_WAYPOINT later
         if not self.nav_client.wait_for_server(timeout_sec=3.0):
             self._log.err("Nav2 Action Server not available! Cannot proceed with mission.")
             return
-            
-        self._dispatch_next_waypoint()
+
+        # 4. Enter the sub-state machine on LANE — LaneGoalPublisher takes
+        # over driving as soon as it sees /mission_substate == "lane".
+        self.manager.enter_autonomous_driving()
+        self._publish_substate('lane')
 
     def _execute_teardown_sequence(self):
         """
@@ -154,7 +202,7 @@ class MissionManagerNode(Node):
         Moves nodes from Active/Inactive -> Unconfigured.
         """
         self._log.info("Unconfiguring nodes to free shared memory and hardware locks...")
-        
+
         # First ensure they are deactivated
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_DEACTIVATE, "ManualNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_DEACTIVATE, "ManualCamera")
@@ -162,7 +210,7 @@ class MissionManagerNode(Node):
         self._change_lifecycle_state(self.auto_camera_client, Transition.TRANSITION_DEACTIVATE, "AutoCamera")
         self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
         self._change_lifecycle_state(self.lane_detection_client, Transition.TRANSITION_DEACTIVATE, "LaneDetection")
-        
+
         # Then Unconfigure (Cleanup)
         self._change_lifecycle_state(self.manual_client, Transition.TRANSITION_CLEANUP, "ManualNav")
         self._change_lifecycle_state(self.manual_camera_client, Transition.TRANSITION_CLEANUP, "ManualCamera")
@@ -293,7 +341,7 @@ class MissionManagerNode(Node):
         try:
             requested_phase = msg.data.strip().lower()
             changed = self.manager.set_phase(requested_phase)
-            
+
             if not changed:
                 return # Ignore duplicate state commands
 
@@ -306,93 +354,205 @@ class MissionManagerNode(Node):
             self._log.err(f"Failed to process mission state request: {e}")
 
     def target_status_callback(self, msg):
-        """Receives data from the CV node if we are actively searching at WP2."""
+        """Receives data from the CV pipeline (via TargetAcquisitionNode) if
+        we are actively searching at WP2."""
         try:
             resolved, reason = self.manager.evaluate_target_status(
-                is_found=msg.is_found, 
-                confidence=msg.confidence_score, 
+                is_found=msg.is_found,
+                confidence=msg.confidence_score,
                 current_time=time.time()
             )
 
             if resolved:
                 self._log.info(f"Vision Task Concluded: {reason}")
                 self._conclude_vision_task() # Proceed to WP3
+
         except Exception as e:
             self._log.err(f"Error evaluating target status: {e}")
 
+    def _waypoints_xy_cb(self, msg: Path) -> None:
+        self._waypoints_xy = [(p.pose.position.x, p.pose.position.y) for p in msg.poses]
+        self._log.info(f"GPS waypoints received: {self._waypoints_xy}")
+
+    def _gps_xy_cb(self, msg: Odometry) -> None:
+        self._gps_xy = (msg.pose.pose.position.x, msg.pose.pose.position.y)
+
+    def _lane_status_cb(self, msg: LaneDetectionResult) -> None:
+        self._lane_valid = (len(msg.left_lane_coeffs) == 3 and len(msg.right_lane_coeffs) == 3)
+
     def tick_callback(self):
-        """Background loop to check for timeouts when blocking on vision tasks."""
+        """Background loop: vision timeout watchdog + autonomous sub-state machine."""
         try:
             if self.manager.vision_state == VisionState.SEARCHING:
                 resolved, reason = self.manager.evaluate_target_status(False, 0.0, time.time())
                 if resolved:
                     self._log.warn(f"Vision Task Concluded via Timeout: {reason}")
                     self._conclude_vision_task()
+
+            if self.manager.is_autonomous():
+                self._tick_autonomous_substate()
         except Exception as e:
             self._log.err(f"Exception in mission tick loop: {e}")
 
-    def _conclude_vision_task(self):
-        """Deactivates FaceRecognition (only needed at WP2) and resumes the mission."""
-        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
-        self._dispatch_next_waypoint()
+    # AUTONOMOUS SUB-STATE MACHINE
+    def _publish_substate(self, value: str) -> None:
+        self.substate_pub.publish(String(data=value))
 
-    # NAV2 ACTION CLIENT LOGIC
-    def _dispatch_next_waypoint(self):
-        """Fetches the next waypoint from the manager and sends it to Nav2."""
-        wp = self.manager.get_next_waypoint()
-        
-        if wp is None:
-            self._log.succ("Rover has reached the final destination. Mission complete.")
+    def _publish_twist(self, angular_z: float) -> None:
+        t = Twist()
+        t.angular.z = angular_z
+        self.cmd_vel_pub.publish(t)
+
+    def _tick_autonomous_substate(self) -> None:
+        state = self.manager.sub_state
+        if state == SubState.LANE:
+            self._tick_lane_substate()
+        elif state == SubState.GPS_WAYPOINT:
+            self._tick_gps_waypoint_substate()
+        elif state == SubState.FACE_DETECTION:
+            self._tick_face_detection_substate()
+        elif state == SubState.LANE_SCAN:
+            self._tick_lane_scan_substate()
+
+    def _tick_lane_substate(self) -> None:
+        """LANE: LaneGoalPublisher is driving. Just watch for WP1 arrival."""
+        if self._waypoints_xy is None or self._gps_xy is None or len(self._waypoints_xy) < 1:
             return
+        wp1 = self._waypoints_xy[0]
+        dist = math.hypot(self._gps_xy[0] - wp1[0], self._gps_xy[1] - wp1[1])
+        if dist <= self._wp_arrival_tol_m:
+            self._log.succ(f"Waypoint 1 reached (gps dist={dist:.2f}m) — switching to GPS_WAYPOINT for WP2")
+            self.manager.set_sub_state(SubState.GPS_WAYPOINT)
+            self.manager.target_wp_index = 1  # WP2
+            self._publish_substate('gps_waypoint')
+            self._dispatch_gps_goal(1)
+
+    def _tick_gps_waypoint_substate(self) -> None:
+        """GPS_WAYPOINT: dispatch/retry a NavigateToPose goal toward target_wp_index."""
+        if self._gps_nav_active or self.manager.target_wp_index is None:
+            return
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        if self._last_gps_nav_send_s is None or (now_s - self._last_gps_nav_send_s) >= self._nav_goal_retry_s:
+            self._dispatch_gps_goal(self.manager.target_wp_index)
+
+    def _tick_face_detection_substate(self) -> None:
+        """FACE_DETECTION: spin in place while searching, stop once resolved."""
+        if self.manager.vision_state == VisionState.SEARCHING:
+            self._publish_twist(self._spin_vel)
+        else:
+            self._publish_twist(0.0)
+
+    def _tick_lane_scan_substate(self) -> None:
+        """LANE_SCAN: spin in place until lane_detection reports valid lanes."""
+        if self._lane_valid:
+            self._publish_twist(0.0)
+            self._log.succ("Lanes redetected — switching back to LANE")
+            self.manager.set_sub_state(SubState.LANE)
+            self._publish_substate('lane')
+        else:
+            self._publish_twist(self._spin_vel)
+
+    def _conclude_vision_task(self):
+        """Deactivates FaceRecognition (only needed at WP2), stops the spin,
+        and resumes the mission toward WP3."""
+        self._publish_twist(0.0)
+        self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_DEACTIVATE, "FaceRecognition")
+        self.manager.set_sub_state(SubState.GPS_WAYPOINT)
+        self.manager.target_wp_index = 2  # WP3
+        self._publish_substate('gps_waypoint')
+        self._dispatch_gps_goal(2)
+
+    # NAV2 ACTION CLIENT LOGIC — GPS waypoints
+    def _dispatch_gps_goal(self, index: int) -> None:
+        """Sends a NavigateToPose goal at GPSWaypointNode's local x,y for waypoint `index`."""
+        if self._waypoints_xy is None or index >= len(self._waypoints_xy):
+            self._log.warn(f"GPS_WAYPOINT: waypoint {index} not available yet — will retry")
+            return
+
+        tx, ty = self._waypoints_xy[index]
+        yaw = 0.0
+        if self._gps_xy is not None:
+            yaw = math.atan2(ty - self._gps_xy[1], tx - self._gps_xy[0])
 
         goal_msg = NavigateToPose.Goal()
         goal_msg.pose.header.frame_id = 'map'
         goal_msg.pose.header.stamp = self.get_clock().now().to_msg()
-        
-        goal_msg.pose.pose.position.x = float(wp.get('x', 0.0))
-        goal_msg.pose.pose.position.y = float(wp.get('y', 0.0))
-        
-        yaw = float(wp.get('yaw', 0.0))
+        goal_msg.pose.pose.position.x = tx
+        goal_msg.pose.pose.position.y = ty
         qz, qw = _yaw_to_quat(yaw)
         goal_msg.pose.pose.orientation.z = qz
         goal_msg.pose.pose.orientation.w = qw
 
-        self._log.info(f"Dispatching Nav2 Goal -> {wp.get('id')}: X:{goal_msg.pose.pose.position.x}, Y:{goal_msg.pose.pose.position.y}")
-        
-        send_goal_future = self.nav_client.send_goal_async(goal_msg)
-        send_goal_future.add_done_callback(lambda f: self._goal_response_callback(f, wp.get('id')))
+        self._gps_goal_generation += 1
+        gen = self._gps_goal_generation
+        self._last_gps_nav_send_s = self.get_clock().now().nanoseconds * 1e-9
 
-    def _goal_response_callback(self, future: Future, wp_id: str):
+        label = self.manager.get_waypoint_label(index)
+        self._log.info(f"Dispatching GPS_WAYPOINT goal gen={gen} -> {label}: X:{tx:.2f}, Y:{ty:.2f}")
+
+        send_goal_future = self.nav_client.send_goal_async(goal_msg)
+        send_goal_future.add_done_callback(lambda f, g=gen, i=index: self._gps_goal_response_callback(f, g, i))
+
+    def _gps_goal_response_callback(self, future: Future, gen: int, index: int):
+        if gen != self._gps_goal_generation:
+            return  # stale — a newer goal has since been dispatched
         try:
             goal_handle = future.result()
             if not goal_handle.accepted:
-                self._log.warn(f"Nav2 rejected waypoint {wp_id}!")
+                self._log.warn(f"Nav2 rejected GPS_WAYPOINT goal (index={index}) — will retry")
                 return
 
-            self._log.info(f"Nav2 accepted waypoint {wp_id}. Tracking progress...")
+            self._log.info(f"Nav2 accepted GPS_WAYPOINT goal (index={index}). Tracking progress...")
+            self._gps_nav_active = True
+            self._gps_goal_handle = goal_handle
             result_future = goal_handle.get_result_async()
-            result_future.add_done_callback(lambda f: self._goal_result_callback(f, wp_id))
+            result_future.add_done_callback(lambda f, g=gen, i=index: self._gps_goal_result_callback(f, g, i))
         except Exception as e:
-            self._log.err(f"Error receiving goal response: {e}")
+            self._log.err(f"Error receiving GPS_WAYPOINT goal response: {e}")
 
-    def _goal_result_callback(self, future: Future, wp_id: str):
-        """Called when Nav2 finishes driving to a waypoint."""
+    def _gps_goal_result_callback(self, future: Future, gen: int, index: int):
+        """Called when Nav2 finishes driving to a GPS waypoint."""
+        if gen != self._gps_goal_generation:
+            return  # stale
+        self._gps_nav_active = False
+        self._gps_goal_handle = None
+
+        STATUS_SUCCEEDED = 4
         try:
-            self._log.succ(f"Arrived at waypoint: {wp_id}")
-            
-            if wp_id == "WP2":
-                self._log.info("Waypoint 2 Reached. Activating FaceRecognition and triggering Vision Task Search...")
-                self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_ACTIVATE, "FaceRecognition")
-                self.manager.start_vision_task(time.time())
-            else:
-                self._dispatch_next_waypoint()
-                
+            status = future.result().status
         except Exception as e:
-            self._log.err(f"Error handling waypoint result: {e}")
+            self._log.err(f"Error handling GPS_WAYPOINT result: {e}")
+            return
+
+        if status != STATUS_SUCCEEDED:
+            self._log.warn(f"GPS_WAYPOINT goal (index={index}) did not succeed (status={status}) — retrying")
+            return  # _tick_gps_waypoint_substate will redispatch after nav_goal_retry_s
+
+        label = self.manager.get_waypoint_label(index)
+        self._log.succ(f"Arrived at {label}")
+
+        if index == 1:  # WP2 — start the face-detection search
+            self._log.info("Waypoint 2 reached. Activating FaceRecognition and starting FACE_DETECTION...")
+            self.manager.set_sub_state(SubState.FACE_DETECTION)
+            self._publish_substate('face_detection')
+            self._change_lifecycle_state(self.face_recognition_client, Transition.TRANSITION_ACTIVATE, "FaceRecognition")
+            self.manager.start_vision_task(time.time())
+        elif index == 2:  # WP3 — start the lane-reacquisition spin
+            self._log.info("Waypoint 3 reached. Starting LANE_SCAN...")
+            self.manager.set_sub_state(SubState.LANE_SCAN)
+            self._publish_substate('lane_scan')
+
+    def _stop_gps_waypoint_nav(self) -> None:
+        """Cancel any in-flight GPS_WAYPOINT Nav2 goal (e.g. on return to MANUAL)."""
+        if self._gps_goal_handle is not None:
+            self._gps_goal_handle.cancel_goal_async()
+            self._gps_goal_handle = None
+        self._gps_nav_active = False
+        self._gps_goal_generation += 1  # invalidate any in-flight callbacks
 
     def destroy_node(self):
         """Intercepts node destruction to Unconfigure the worker nodes."""
-        # We do not send Lifecycle network calls here because during Ctrl+C, 
+        # We do not send Lifecycle network calls here because during Ctrl+C,
         # the ROS context is invalid and the target nodes are already dead.
         super().destroy_node()
 
