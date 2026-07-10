@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 GPSWaypointNode — converts lat/lon competition waypoints and the vehicle's
-live GPS fix into a local ENU (x, y) frame anchored at the first valid GPS
-fix received at boot.
+live GPS fix into a local ENU (x, y) frame anchored at an averaged GPS
+origin fixed at boot.
 
 Why this exists
 ────────────────
@@ -17,7 +17,8 @@ Nav2 as a goal.
 
 Frame convention
 ─────────────────
-Local ENU tangent plane, origin = first valid /gps fix received:
+Local ENU tangent plane, origin = average of the first N valid /gps fixes
+received at boot:
     x = East  (metres)
     y = North (metres)
 This matches the `map` frame convention used for NavigateToPose goals in
@@ -31,15 +32,31 @@ well within the competition's 1.5 m waypoint tolerance. If you ever need
 this to work over kilometres, switch to UTM or robot_localization's
 navsat_transform_node instead.
 
+Noise handling
+───────────────
+A bare GNSS module such as the Beitian BE-880 (u-blox based, no RTK) is
+typically only accurate to ~2.5 m CEP standalone, so both the origin and
+the live position benefit from averaging:
+  - The origin is computed from the average of `origin_sample_count`
+    consecutive fixes, rather than latching onto the very first fix
+    (which is often the noisiest, before HDOP has settled).
+  - The published /gps_xy position is smoothed with a simple moving
+    average over `smoothing_window` fixes to reduce fix-to-fix jitter.
+If you need to know why jitter is bad, log msg.status.status (SBAS vs
+plain autonomous fix) and HDOP if your firmware exposes it — that will
+tell you whether the noise is normal or a sign of a multipath/antenna
+placement problem.
+
 Published
 ─────────
     /waypoints_xy   (nav_msgs/Path)      the 3 competition waypoints converted to local x,y.
                                           Published once the origin is fixed, using a
                                           TRANSIENT_LOCAL QoS so late subscribers still get it.
     /gps_xy         (nav_msgs/Odometry)  the vehicle's live position in the same local x,y
-                                          frame, derived purely from GPS. Use this ONLY to
-                                          reach Waypoint 1 — after that, switch your position
-                                          source to the encoder/IMU dead-reckoning odom.
+                                          frame, derived purely from GPS and smoothed with a
+                                          moving average. Use this ONLY to reach Waypoint 1 —
+                                          after that, switch your position source to the
+                                          encoder/IMU dead-reckoning odom.
 
 Subscribed
 ──────────
@@ -47,14 +64,17 @@ Subscribed
 
 Parameters
 ──────────
-    waypoint_lats     (list[float], [])       latitudes  of WP1, WP2, WP3 in order
-    waypoint_lons     (list[float], [])       longitudes of WP1, WP2, WP3 in order
-    waypoint_ids      (list[str],   [])       optional labels, e.g. ["WP1","WP2","WP3"]
-    map_frame         (str, 'map')
-    base_frame        (str, 'base_link')
-    wp1_tolerance_m   (float, 1.5)            logs a "within tolerance" message for WP1
+    waypoint_lats      (list[float], [])       latitudes  of WP1, WP2, WP3 in order
+    waypoint_lons      (list[float], [])       longitudes of WP1, WP2, WP3 in order
+    waypoint_ids       (list[str],   [])       optional labels, e.g. ["WP1","WP2","WP3"]
+    map_frame          (str, 'map')
+    base_frame         (str, 'base_link')
+    wp1_tolerance_m    (float, 1.5)            logs a "within tolerance" message for WP1
+    origin_sample_count (int, 10)              number of fixes averaged to fix the origin
+    smoothing_window    (int, 5)               number of fixes averaged for /gps_xy output
 """
 import math
+from collections import deque
 
 import rclpy
 from rclpy.node import Node
@@ -88,6 +108,8 @@ class GPSWaypointNode(Node):
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("wp1_tolerance_m", 1.5)
+        self.declare_parameter("origin_sample_count",50)
+        self.declare_parameter("smoothing_window", 20)
 
         self._lats = list(self.get_parameter("waypoint_lats").value)
         self._lons = list(self.get_parameter("waypoint_lons").value)
@@ -98,6 +120,8 @@ class GPSWaypointNode(Node):
         self._map_frame = self.get_parameter("map_frame").value
         self._base_frame = self.get_parameter("base_frame").value
         self._wp1_tol = float(self.get_parameter("wp1_tolerance_m").value)
+        self._origin_sample_count = max(1, int(self.get_parameter("origin_sample_count").value))
+        self._smoothing_window = max(1, int(self.get_parameter("smoothing_window").value))
 
         if len(self._lats) != len(self._lons):
             self.get_logger().error(
@@ -119,11 +143,16 @@ class GPSWaypointNode(Node):
         self._gps_sub = self.create_subscription(NavSatFix, "/gps", self._gps_cb, 10)
 
         self._origin: tuple[float, float] | None = None
+        self._origin_samples: list[tuple[float, float]] = []
         self._wp1_xy: tuple[float, float] | None = None
         self._wp1_notified = False
 
+        # rolling window of recent (x, y) fixes for moving-average smoothing
+        self._xy_window: deque[tuple[float, float]] = deque(maxlen=self._smoothing_window)
+
         self.get_logger().info(
-            f"GPSWaypointNode up — waiting for first GPS fix to fix the local origin "
+            f"GPSWaypointNode up — averaging {self._origin_sample_count} fixes to fix the "
+            f"local origin, smoothing /gps_xy over {self._smoothing_window} fixes "
             f"({len(self._lats)} waypoints loaded)."
         )
 
@@ -136,10 +165,18 @@ class GPSWaypointNode(Node):
             return
 
         if self._origin is None:
-            self._origin = (msg.latitude, msg.longitude)
+            self._origin_samples.append((msg.latitude, msg.longitude))
+            if len(self._origin_samples) < self._origin_sample_count:
+                return  # keep collecting samples before locking the origin
+
+            lat0 = sum(s[0] for s in self._origin_samples) / len(self._origin_samples)
+            lon0 = sum(s[1] for s in self._origin_samples) / len(self._origin_samples)
+            self._origin = (lat0, lon0)
             self.get_logger().info(
-                f"GPS origin fixed at lat={msg.latitude:.7f}, lon={msg.longitude:.7f}"
+                f"GPS origin fixed at lat={lat0:.7f}, lon={lon0:.7f} "
+                f"(averaged over {len(self._origin_samples)} fixes)"
             )
+            self._origin_samples.clear()  # free the buffer, no longer needed
             self._publish_waypoints_xy()
 
         self._publish_gps_xy(msg)
@@ -169,11 +206,15 @@ class GPSWaypointNode(Node):
 
         self._waypoints_pub.publish(path)
 
-    # live GPS position, in the same local frame
+    # live GPS position, in the same local frame, smoothed with a moving average
 
     def _publish_gps_xy(self, fix: NavSatFix) -> None:
         lat0, lon0 = self._origin
-        x, y = latlon_to_local_xy(fix.latitude, fix.longitude, lat0, lon0)
+        x_raw, y_raw = latlon_to_local_xy(fix.latitude, fix.longitude, lat0, lon0)
+
+        self._xy_window.append((x_raw, y_raw))
+        x = sum(p[0] for p in self._xy_window) / len(self._xy_window)
+        y = sum(p[1] for p in self._xy_window) / len(self._xy_window)
 
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
