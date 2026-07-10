@@ -77,11 +77,9 @@ class ESPBridgeNode(Node):
 
         # publishers
         self._imu_pub     = self.create_publisher(Imu,                "/imu",      10)
-        self._odom_pub    = self.create_publisher(Odometry,           "/odom",     10)
         self._euler_pub   = self.create_publisher(EulerAngles,        "/euler",    10)
         self._encoder_pub = self.create_publisher(EncoderRevolutions, "/encoders_revs", 10)
         self._gps_pub     = self.create_publisher(NavSatFix,           "/gps",      10)
-        self._tf_broadcaster = TransformBroadcaster(self)
 
         # odometry state
         self._x:     float = 0.0
@@ -241,7 +239,6 @@ class ESPBridgeNode(Node):
 
         stamp = self.get_clock().now().to_msg()
         self._publish_imu(data, stamp)
-        # self._publish_odom(data, stamp) # old odometry publisher
         self._publish_euler(data, stamp)
         self._publish_encoders(data, stamp)
         self._publish_gps(data, stamp)
@@ -313,89 +310,12 @@ class ESPBridgeNode(Node):
         msg.roll  = float(data.roll)
         self._euler_pub.publish(msg)
 
-    # /odom 
-
-    def _publish_odom(self, data: SensorData, stamp: Time) -> None:
-        wheel_radius: float = self.get_parameter("wheel_radius").value
-        odom_frame:   str   = self.get_parameter("odom_frame").value
-        base_frame:   str   = self.get_parameter("base_frame").value
-
-        imu_theta = math.radians(data.yaw)
-        # if you want to see the IMU angles in the log
-        self.get_logger().info(
-            f"yaw_deg={data.yaw:.2f}  pitch_deg={data.pitch:.2f}  roll_deg={data.roll:.2f}  "
-            f"imu_theta_rad={imu_theta:.3f}"
-        )
-
-        if self._latest_enc_speeds is None:
-            self._theta = imu_theta
-        else:
-            now_sec = stamp.sec + stamp.nanosec * 1e-9
-            if self._prev_enc1 is None:
-                self._prev_enc1 = now_sec
-            else:
-                dt = now_sec - self._prev_enc1
-                self._prev_enc1 = now_sec
-
-                if 0.0 < dt < 1.0:
-                    speed_r = float(self._latest_enc_speeds.motor1_speed)
-                    speed_l = float(self._latest_enc_speeds.motor2_speed)
-
-                    v_left  = speed_l * 2.0 * math.pi * wheel_radius / 1000.0
-                    v_right = speed_r * 2.0 * math.pi * wheel_radius / 1000.0
-
-                    delta_dist = (v_left + v_right) * 0.5 * dt
-
-                    mid_theta = _wrap_angle(self._theta + _wrap_angle(imu_theta - self._theta) * 0.5)
-                    self._x += delta_dist * math.cos(mid_theta)
-                    self._y += delta_dist * math.sin(mid_theta)
-
-            self._theta = imu_theta
-
-        odom_quat = _yaw_to_quat(self._theta)
-
-        msg = Odometry()
-        msg.header.stamp    = stamp
-        msg.header.frame_id = odom_frame
-        msg.child_frame_id  = base_frame
-        msg.pose.pose.position.x  = self._x
-        msg.pose.pose.position.y  = self._y
-        msg.pose.pose.position.z  = 0.0
-        msg.pose.pose.orientation = odom_quat
-        self._odom_pub.publish(msg)
-
-        tf = TransformStamped()
-        tf.header.stamp            = stamp
-        tf.header.frame_id         = odom_frame
-        tf.child_frame_id          = base_frame
-        tf.transform.translation.x = self._x
-        tf.transform.translation.y = self._y
-        tf.transform.translation.z = 0.0
-        tf.transform.rotation      = odom_quat
-        self._tf_broadcaster.sendTransform(tf)
-
-    # cleanup
-
     def destroy_node(self) -> None:
         self._running = False
         self._reader_thread.join(timeout=1.0)
         self._sensor_ctrl.close()
         self._actuator_ctrl.close()
         super().destroy_node()
-
-
-# helpers
-
-def _yaw_to_quat(yaw: float) -> Quaternion:
-    """Convert a 2D yaw angle (radians) to a geometry_msgs/Quaternion."""
-    half = yaw * 0.5
-    return Quaternion(x=0.0, y=0.0, z=math.sin(half), w=math.cos(half))
-
-
-def _wrap_angle(angle: float) -> float:
-    """Wrap *angle* (radians) to [-π, π]."""
-    return math.atan2(math.sin(angle), math.cos(angle))
-
 
 def main(args=None) -> None:
     rclpy.init(args=args)

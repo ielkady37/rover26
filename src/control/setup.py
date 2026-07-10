@@ -36,6 +36,7 @@ entry_points={
 'mission_manager_node = control.nodes.MissionManagerNode:main',
 'hoverboard_node      = control.nodes.HoverBoardNode:main',
 "camera_control_server = control.API.ControlServer:main",
+'dummy_node = control.nodes.DummyNode:main',
         ],
     },
 )

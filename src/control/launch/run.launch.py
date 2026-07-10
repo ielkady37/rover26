@@ -7,7 +7,9 @@ from ament_index_python.packages import get_package_share_directory
 def generate_launch_description():
 
     rover26_pkg = get_package_share_directory('rover26')
+    autonomy_pkg = get_package_share_directory('rover26_autonomy')
     xacro_file  = os.path.join(rover26_pkg, 'description', 'rover26.urdf.xacro')
+    ukf_config = os.path.join(autonomy_pkg, 'config', 'ukf.yaml')
     robot_desc  = xacro.process_file(xacro_file).toxml()
 
     # Robot State Publisher — publishes URDF transforms to /tf_static
@@ -90,9 +92,19 @@ def generate_launch_description():
         name="odom_publisher_node",
         parameters=[{
             'wheel_radius': 0.075,
+            'wheel_base': 0.32,
             'odom_frame': 'odom',
             'base_frame': 'base_footprint',
         }]
+    )
+
+    # Localization Node
+    ukf_node = Node(
+        package='robot_localization',
+            executable='ukf_node',
+            name='ukf_node',
+            output='screen',
+            parameters=[ukf_config],
     )
 
     # GPS Waypoint Node
@@ -206,5 +218,6 @@ def generate_launch_description():
         manual_camera_streaming_node,
         autonomous_camera_streaming_node,
         lane_detection_node,
-        face_recognition_node
+        face_recognition_node,
+        ukf_node,
     ])

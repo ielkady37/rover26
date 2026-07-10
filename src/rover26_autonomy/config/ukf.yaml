@@ -1,0 +1,171 @@
+# ─────────────────────────────────────────────────────────────
+#  ukf.yaml  —  ANTI-OSCILLATION tuned version
+#  Key change: Q values reduced → filter trusts motion model
+#  more → smoother output → no oscillation while moving
+# ─────────────────────────────────────────────────────────────
+
+ukf_node:
+  ros__parameters:
+
+    use_sim_time: false
+    # frequency: 20.0
+    frequency: 30.0  # Match odom rate more closely for smoother RViz TF.
+    # sensor_timeout: 0.12
+    sensor_timeout: 0.20  # Avoid brief turn-time dropouts causing TF jumps.
+    two_d_mode: true
+    publish_tf: true
+    publish_acceleration: false
+    print_diagnostics: true
+
+    map_frame:       map
+    odom_frame:      odom
+    base_link_frame: base_footprint
+    world_frame:     odom
+    reset_on_time_jump: true
+
+    # ── Sensor 1: /fake_odom ──────────────────
+    # Fake/cmd odom provides planar translation only.
+    # Real heading correction comes from the IMU below.
+    odom0: /odom_wheels
+    odom0_config:
+    #   # Old: used odom vyaw too, which can fight IMU yaw-rate while turning.
+    #   # - [true,  true,  false,
+    #   #    false, false, false,
+    #   #    true,  false, false,
+    #   #    false, false, true,
+    #   #    false, false, false]
+    #   # Old: after removing odom vyaw, vy was unconstrained and caused lateral drift.
+    #   # - [true,  true,  false,
+    #   #    false, false, false,
+    #   #    true,  false, false,
+    #   #    false, false, false,
+    #   #    false, false, falseukfu]
+    #   # Old: IMU-only yaw-rate still caused turn-time jitter.
+    #   # - [true,  true,  false,
+    #   #    false, false, false,
+    #   #    true,  true,  false,
+    #   #    false, false, false,
+    #   #    false, false, false]
+    #   # Old: also fused odom vyaw; double-fusing yaw/yaw-rate caused turn jitter.
+    #   # - [true,  true,  false,
+    #   #    false, false, true,
+    #   #    true,  true,  false,
+    #   #    false, false, true,
+    #   #    false, false, false]
+    #   # Bad test: twist-only caused large jumps.
+    #   # - [false, false, false,
+    #   #    false, false, false,
+    #   #    true,  true,  false,
+    #   #    false, false, true,
+    #   #    false, false, false]
+    #   # Previous: fused odom pose + twist; smoother than twist-only.
+    #   # - [true,  true,  false,
+    #   #    false, false, true,
+    #   #    true,  true,  false,
+    #   #    false, false, false,
+    #   #    false, false, false]
+    #   # Test: weak odom vyaw still destabilized the map at higher speed.
+    #   # - [true,  true,  false,
+    #   #    false, false, true,
+    #   #    true,  true,  false,
+    #   #    false, false, true,
+    #   #    false, false, false]
+      - [true,  true,  false,
+         false, false, false,
+         true,  false, false,
+         false, false, false,
+         false, false, false]
+    odom0_differential: false
+    odom0_relative:     false
+    odom0_queue_size:   10
+
+    # ── Sensor 2: /imu_cov ───────────────────
+    # Using real IMU yaw + yaw rate for heading.
+    imu0: /imu
+    imu0_config:
+      # Old: used IMU vyaw only.
+      # - [false, false, false,
+      #    false, false, false,
+      #    false, false, false,
+      #    false, false, true,
+      #    false, false, false]
+      # Disabled test:
+      # - [false, false, false,
+      #    false, false, false,
+      #    false, false, false,
+      #    false, false, false,
+      #    false, false, false]
+      - [false, false, false,
+         false, false, true,
+         false, false, false,
+         false, false, true,
+         false, false, false]
+    imu0_differential:                      false
+    imu0_relative:                          false
+    imu0_remove_gravitational_acceleration: true
+    imu0_queue_size:                        20
+
+    # ── Sigma point params ───────────────────
+    alpha: 0.005
+    kappa: 0.0
+    beta:  2.0
+
+    # ════════════════════════════════════════════════════════
+    #  P — Initial covariance (15×15)
+    #  Moderate values — UKF converges in a few seconds
+    # ════════════════════════════════════════════════════════
+    initial_estimate_covariance:
+      - [5.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    5.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    5.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-1, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-2, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-3, 0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    5.0e-2, 0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-2, 0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-2, 0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-3]
+
+    # ════════════════════════════════════════════════════════
+    #  Q — Process noise (15×15)
+    #
+    #  ANTI-OSCILLATION: values are LOWER than before
+    #  Lower Q = filter trusts motion model more = smoother
+    #
+    #  [0]  x      1e-4   was 5e-3 → REDUCED  stops position jitter
+    #  [1]  y      1e-4   was 5e-3 → REDUCED
+    #  [2]  z      1e-9   ignored  (2D)
+    #  [3]  roll   1e-9   ignored  (2D)
+    #  [4]  pitch  1e-9   ignored  (2D)
+    #  [5]  yaw    1e-4   was 5e-3 → REDUCED  stops heading oscillation
+    #  [6]  vx     5e-4   was 1e-3 → REDUCED  stops speed oscillation
+    #  [7]  vy     1e-5   was 1e-4 → REDUCED  rover barely moves sideways
+    #  [8]  vz     1e-9   ignored
+    #  [9]  vroll  1e-9   ignored
+    #  [10] vpitch 1e-9   ignored
+    #  [11] vyaw   5e-4   was 1e-3 → REDUCED  stops yaw rate oscillation
+    #  [12] ax     1e-2   unchanged  acceleration changes fast
+    #  [13] ay     1e-3   unchanged
+    #  [14] az     1e-9   ignored
+    # ════════════════════════════════════════════════════════
+    process_noise_covariance:
+      - [1.0e-4, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    1.0e-4, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-4, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    5.0e-4, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-5, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9, 0.0,    0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    5.0e-4, 0.0,    0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-2, 0.0,    0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-3, 0.0,
+         0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    0.0,    1.0e-9]
