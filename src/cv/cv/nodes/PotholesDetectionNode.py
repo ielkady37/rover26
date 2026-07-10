@@ -13,7 +13,7 @@ _QOS_DEPTH = 10
 
 
 class PotholesDetectionNode(LifecycleNode):
-    """Subscribes to a raw camera topic, runs pothole detection, and publishes results.
+    """Subscribes to a raw camera topic, runs target detection, and publishes results.
 
     Topics
     ------
@@ -43,19 +43,21 @@ class PotholesDetectionNode(LifecycleNode):
                 return TransitionCallbackReturn.FAILURE
 
             cam_name = str(pd_cfg.get('camera_name', 'fisheye_camera'))
-            cameras_cfg = conf.fetchData(Configurator.CAMERAS)
-            cam_cfg = (cameras_cfg or {}).get(cam_name, {})
-            if not cam_cfg:
-                self._log.warn(
-                    f'PotholesDetectionNode: camera "{cam_name}" not found in cameras.yaml'
-                    ' — using defaults.'
-                )
+            cam_cfg = {}
+            if bool(pd_cfg.get('use_fisheye', False)):
+                cameras_cfg = conf.fetchData(Configurator.CAMERAS)
+                cam_cfg = (cameras_cfg or {}).get(cam_name, {})
+                if not cam_cfg:
+                    self._log.warn(
+                        f'PotholesDetectionNode: camera "{cam_name}" not found in cameras.yaml'
+                        ' — fisheye remap will use config defaults.'
+                    )
 
             self._cam_name = cam_name
             self._detector = PotholesDetector(pd_cfg, cam_cfg)
             self._detector.load()
 
-            self._log.succ('PotholesDetectionNode: maps loaded successfully.')
+            self._log.succ('PotholesDetectionNode: detector configured successfully.')
             return TransitionCallbackReturn.SUCCESS
         except Exception as exc:
             self._log.err(f'PotholesDetectionNode on_configure failed: {exc}')
