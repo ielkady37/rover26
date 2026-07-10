@@ -11,34 +11,37 @@ logger = logging.getLogger(__name__)
 
 
 class PotholesDetector:
-    """Fisheye-aware pothole detector using classical CV (CLAHE + threshold + morphology).
+    """Fisheye-aware white-target detector using the pipeline from ``test.py``.
 
     Parameters
     ----------
     pd_config:
-        Dict loaded from ``potholes_detection.yaml``.  Required key: ``balance``.
+        Dict loaded from ``potholes_detection.yaml``.
     camera_config:
-        Dict loaded from ``cameras.yaml`` for the subscribed camera.  Used to
-        obtain ``width``, ``height``, and ``calibration`` path for building
-        the fisheye undistort maps.
+        Dict loaded from ``cameras.yaml`` for the subscribed camera.  Used as a
+        fallback for image size and calibration settings.
     """
 
     def __init__(self, pd_config: dict, camera_config: dict) -> None:
-        self._balance = float(pd_config.get('balance', 0.0))
-        self._width = int(camera_config.get('width', 320))
-        self._height = int(camera_config.get('height', 240))
-        self._calib_path = camera_config.get('calibration')
+        self._use_fisheye = bool(pd_config.get('use_fisheye', False))
+        self._balance = float(
+            pd_config.get('balance', camera_config.get('fisheye_balance', 0.0))
+        )
+        self._width = int(pd_config.get('frame_width', camera_config.get('width', 640)))
+        self._height = int(pd_config.get('frame_height', camera_config.get('height', 480)))
+        self._calib_path = pd_config.get('calibration_file', camera_config.get('calibration'))
 
-        # Contour filter thresholds — tunable via potholes_detection.yaml
-        self._min_area = int(pd_config.get('min_area', 150))
-        self._max_area = int(pd_config.get('max_area', 60000))
-        self._min_circularity = float(pd_config.get('min_circularity', 0.75))
-        self._min_aspect_ratio = float(pd_config.get('min_aspect_ratio', 0.75))
-        self._max_aspect_ratio = float(pd_config.get('max_aspect_ratio', 1.3))
-        self._min_solidity = float(pd_config.get('min_solidity', 0.90))
-        self._min_extent = float(pd_config.get('min_extent', 0.72))
-        self._min_approx_vertices = int(pd_config.get('min_approx_vertices', 6))
-        self._min_radius = float(pd_config.get('min_radius', 8.0))
+        # Thresholds mirrored from the standalone script.
+        self._min_area = int(pd_config.get('min_area', 500))
+        self._max_area = int(pd_config.get('max_area', 30000))
+        self._min_circularity = float(pd_config.get('min_circularity', 0.65))
+        self._hsv_lower = np.array(pd_config.get('hsv_lower', [0, 0, 200]), dtype=np.uint8)
+        self._hsv_upper = np.array(pd_config.get('hsv_upper', [180, 40, 255]), dtype=np.uint8)
+        self._gray_threshold = int(pd_config.get('gray_threshold', 220))
+        self._open_kernel_size = int(pd_config.get('open_kernel_size', 3))
+        self._close_kernel_size = int(pd_config.get('close_kernel_size', 5))
+        self._blur_kernel_size = int(pd_config.get('blur_kernel_size', 5))
+        self._blur_sigma = float(pd_config.get('blur_sigma', 0.0))
 
         self._map1 = None
         self._map2 = None
@@ -48,7 +51,7 @@ class PotholesDetector:
     # Lifecycle
 
     def load(self) -> None:
-        """Build fisheye undistortion maps from the calibration file.
+        """Load optional fisheye maps and mark the detector ready.
 
         Raises
         ------
@@ -56,33 +59,44 @@ class PotholesDetector:
             When the calibration file is missing or cannot be loaded.
         """
         try:
-            if not self._calib_path or str(self._calib_path).upper() == 'NONE':
-                raise RuntimeError('calibration path is not configured')
+            self._map1 = None
+            self._map2 = None
 
-            root = Configurator.getProjectRoot()
-            calib_abs = self._resolve_path(str(self._calib_path), root)
+            if self._use_fisheye:
+                if not self._calib_path or str(self._calib_path).upper() == 'NONE':
+                    raise RuntimeError('calibration path is not configured')
 
-            if not os.path.exists(calib_abs):
-                raise RuntimeError(f'calibration file not found: {calib_abs}')
+                root = Configurator.getProjectRoot()
+                calib_abs = self._resolve_path(str(self._calib_path), root)
 
-            self._map1, self._map2 = CVUtilities.build_maps(
-                calib_abs, self._balance, self._width, self._height
-            )
+                if not os.path.exists(calib_abs):
+                    raise RuntimeError(f'calibration file not found: {calib_abs}')
 
-            if self._map1 is None or self._map2 is None:
-                raise RuntimeError(
-                    f'failed to build calibration maps from: {calib_abs}'
+                self._map1, self._map2 = CVUtilities.build_maps(
+                    calib_abs, self._balance, self._width, self._height
                 )
 
+                if self._map1 is None or self._map2 is None:
+                    raise RuntimeError(
+                        f'failed to build calibration maps from: {calib_abs}'
+                    )
+
             self._ready = True
-            logger.info(
-                'PotholesDetector calibration loaded successfully from %s '
-                '(size=%sx%s, balance=%.3f)',
-                calib_abs,
-                self._width,
-                self._height,
-                self._balance,
-            )
+            if self._use_fisheye:
+                logger.info(
+                    'PotholesDetector calibration loaded successfully from %s '
+                    '(size=%sx%s, balance=%.3f)',
+                    calib_abs,
+                    self._width,
+                    self._height,
+                    self._balance,
+                )
+            else:
+                logger.info(
+                    'PotholesDetector ready without fisheye remap (size=%sx%s)',
+                    self._width,
+                    self._height,
+                )
         except Exception as exc:
             self._ready = False
             logger.error('PotholesDetector calibration load failed: %s', str(exc))
@@ -92,11 +106,11 @@ class PotholesDetector:
     # Detection
 
     def detect(self, raw_frame: np.ndarray):
-        """Run pothole detection on one raw (uncalibrated) frame.
+        """Run white-target detection on one raw (uncalibrated) frame.
 
-        Applies fisheye remap when calibration maps are available, then runs
-        CLAHE enhancement, binary thresholding, morphological cleanup, and
-        contour filtering by circularity, solidity, and aspect ratio.
+        Applies optional fisheye remap, then runs CLAHE enhancement, HSV and
+        grayscale thresholding, morphological cleanup, and contour filtering by
+        area and circularity.
 
         Parameters
         ----------
@@ -114,15 +128,6 @@ class PotholesDetector:
             return raw_frame, False, [], [], []
 
         try:
-            # frame = (
-            #     cv2.remap(
-            #         raw_frame, self._map1, self._map2,
-            #         interpolation=cv2.INTER_LINEAR,
-            #         borderMode=cv2.BORDER_CONSTANT,
-            #     )
-            #     if self._map1 is not None
-            #     else raw_frame.copy()
-            # )
             frame = raw_frame.copy()
 
             # frame = cv2.resize(frame, (self._width, self._height))
@@ -130,25 +135,34 @@ class PotholesDetector:
             # --- Image enhancement ----------------------------------------
             lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
             l, a, b = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-            merged = cv2.merge((clahe.apply(l), a, b))
-            enhanced = cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
-
-            # --- Grayscale + blur -----------------------------------------
-            blur = cv2.GaussianBlur(
-                cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY),
-                (9, 9), 2,
-            )
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            l = clahe.apply(l)
+            lab = cv2.merge((l, a, b))
+            enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
             # --- Threshold ------------------------------------------------
-            _, mask = cv2.threshold(blur, 225, 255, cv2.THRESH_BINARY)
+            hsv = cv2.cvtColor(enhanced, cv2.COLOR_BGR2HSV)
+            mask_hsv = cv2.inRange(hsv, self._hsv_lower, self._hsv_upper)
+
+            gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
+            _, mask_gray = cv2.threshold(
+                gray,
+                self._gray_threshold,
+                255,
+                cv2.THRESH_BINARY,
+            )
+
+            mask = cv2.bitwise_and(mask_hsv, mask_gray)
 
             # --- Morphology -----------------------------------------------
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
-            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-            mask = cv2.erode(mask, kernel, iterations=1)
-            mask = cv2.dilate(mask, kernel, iterations=2)
+            open_kernel = np.ones((self._open_kernel_size, self._open_kernel_size), np.uint8)
+            close_kernel = np.ones((self._close_kernel_size, self._close_kernel_size), np.uint8)
+
+            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, open_kernel)
+            mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
+
+            blur_kernel = self._blur_kernel_size if self._blur_kernel_size % 2 == 1 else self._blur_kernel_size + 1
+            mask = cv2.GaussianBlur(mask, (blur_kernel, blur_kernel), self._blur_sigma)
 
             # --- Contour filtering ----------------------------------------
             contours, _ = cv2.findContours(
@@ -169,39 +183,39 @@ class PotholesDetector:
                     continue
 
                 circularity = (4 * np.pi * area) / (perimeter * perimeter)
-                x, y, w, h = cv2.boundingRect(cnt)
-                aspect_ratio = w / float(h)
-                extent = area / (w * h)
-                hull = cv2.convexHull(cnt)
-                hull_area = cv2.contourArea(hull)
-                solidity = area / hull_area if hull_area > 0 else 0.0
-                approx = cv2.approxPolyDP(cnt, 0.02 * perimeter, True)
+                if circularity < self._min_circularity:
+                    continue
 
-                if (
-                    circularity > self._min_circularity
-                    and self._min_aspect_ratio < aspect_ratio < self._max_aspect_ratio
-                    and solidity > self._min_solidity
-                    and extent > self._min_extent
-                    and len(approx) > self._min_approx_vertices
-                ):
-                    (cx, cy), radius = cv2.minEnclosingCircle(cnt)
-                    if radius < self._min_radius:
-                        continue
+                if len(cnt) < 5:
+                    continue
 
-                    center = (int(cx), int(cy))
-                    r = int(radius)
+                try:
+                    ellipse = cv2.fitEllipse(cnt)
+                except cv2.error:
+                    continue
 
-                    cv2.circle(frame, center, r, (0, 255, 0), 3)
-                    cv2.circle(frame, center, 3, (0, 0, 255), -1)
-                    cv2.putText(
-                        frame, 'POTHOLE',
-                        (center[0] - 40, center[1] - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2,
-                    )
+                (cx, cy), (major_axis, minor_axis), _ = ellipse
+                if major_axis <= 0 or minor_axis <= 0:
+                    continue
 
-                    xs.append(float(cx))
-                    ys.append(float(cy))
-                    radii.append(float(radius))
+                center = (int(cx), int(cy))
+                radius = max(major_axis, minor_axis) / 2.0
+
+                cv2.ellipse(frame, ellipse, (0, 255, 0), 3)
+                cv2.circle(frame, center, 4, (0, 0, 255), -1)
+                cv2.putText(
+                    frame,
+                    'TARGET',
+                    (center[0] - 40, center[1] - 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.7,
+                    (0, 255, 0),
+                    2,
+                )
+
+                xs.append(float(cx))
+                ys.append(float(cy))
+                radii.append(float(radius))
 
             return frame, len(xs) > 0, xs, ys, radii
 
@@ -217,4 +231,3 @@ class PotholesDetector:
         if os.path.isabs(path) and not os.path.exists(path):
             return os.path.join(root, path.lstrip('/'))
         return path
-
