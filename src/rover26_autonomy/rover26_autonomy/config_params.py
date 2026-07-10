@@ -109,7 +109,7 @@ class LaneGoalPublisher:
     # NO NavigateToPose action is dispatched and recovery spins are disabled.
     # Use when bench-testing with only lane_detection_node running.
     # MUST be False for real driving.
-    DEBUG_STANDALONE: bool = False
+    DEBUG_STANDALONE: bool = True
 
     # ── Curvature thresholds ───────────────────────────────────────────────────
     # Measured on the perspective 1280x720 frame a STRAIGHT road already shows
@@ -127,12 +127,16 @@ class LaneGoalPublisher:
     # above that extrapolates the polynomials outside their fitted range and
     # produces garbage (negative lane widths, ±10 m lateral offsets). Keep all
     # three fractions comfortably below the horizon.
-    # PY_FAR  = 0.60 → far look-ahead on straights (stable)
-    # PY_NEAR = 0.72 → closer on curves (goal stays on the arc, not the chord)
-    # PY_SHARP= 0.75 → very close stepping stones on sharp turns
-    PY_FAR:   float = 0.60
-    PY_NEAR:  float = 0.72
-    PY_SHARP: float = 0.75
+    # PY_FAR  = 0.50 → far look-ahead on straights (stable, away from the
+    #                  fisheye near-field where lane width is exaggerated)
+    # PY_NEAR = 0.62 → closer on curves (goal stays on the arc, not the chord)
+    # PY_SHARP= 0.65 → very close stepping stones on sharp turns
+    # Still ~0.08 above the ~0.42 horizon floor documented above — if you push
+    # these lower, watch the annotated lane overlay: py must stay within the
+    # visibly-drawn fitted line, or you're extrapolating past real pixels.
+    PY_FAR:   float = 0.50
+    PY_NEAR:  float = 0.62
+    PY_SHARP: float = 0.65
 
     # ── Sharp-turn goal projection ─────────────────────────────────────────────
     # Fixed forward distance for each stepping stone in sharp-turn mode.

@@ -195,15 +195,19 @@ class LaneDetector:
                     self._lane_ema = (1.0 - alpha) * self._lane_ema + alpha * ll_seg_mask.astype(np.float32)
                 ll_seg_mask = (self._lane_ema >= self._lane_ema_thresh).astype(np.uint8)
 
-            # --- Split left / right by vertical midline ---
-            mid = w_frame // 2
-            left_mask = ll_seg_mask[:, :mid]
-            right_mask = ll_seg_mask[:, mid:]
+            # --- Split left / right by the drivable-area's own row-wise
+            # center, instead of a fixed frame column. A fixed mid assumes
+            # the road stays centered in the image; it silently misassigns
+            # pixels to the wrong side once the road curves or the camera
+            # is tilted/rolled relative to the ground. ---
+            mid_col = self._adaptive_midline(da_seg_mask, w_frame)
+            col_idx = np.arange(w_frame)[np.newaxis, :]
+            lane_bool = ll_seg_mask == 1
+            left_mask = lane_bool & (col_idx < mid_col[:, np.newaxis])
+            right_mask = lane_bool & (col_idx >= mid_col[:, np.newaxis])
 
-            left_coeffs, left_span = self._fit_lane(left_mask, x_offset=0,
-                                                    side='LEFT ' if diag else None)
-            right_coeffs, right_span = self._fit_lane(right_mask, x_offset=mid,
-                                                      side='RIGHT' if diag else None)
+            left_coeffs, left_span = self._fit_lane(left_mask, side='LEFT ' if diag else None)
+            right_coeffs, right_span = self._fit_lane(right_mask, side='RIGHT' if diag else None)
 
             # [DIAG] per-frame summary: mask pixel budget per side + fit outcome
             if diag:
@@ -251,15 +255,14 @@ class LaneDetector:
     # ------------------------------------------------------------------
     # Internal
 
-    def _fit_lane(self, mask: np.ndarray, x_offset: int = 0, side: str | None = None):
+    def _fit_lane(self, mask: np.ndarray, side: str | None = None):
         """Fit a polynomial to lit pixels in *mask*.
 
         Parameters
         ----------
         mask:
-            Binary 2-D array (H × W_half) where 1 = lane pixel.
-        x_offset:
-            Column offset to add to x-coordinates (non-zero for right lane).
+            Boolean/binary 2-D array (H × W) in full-frame coordinates,
+            already restricted to one side of the adaptive midline.
         side:
             [DIAG] Side label ('LEFT '/'RIGHT') to log fit outcome under,
             or None to stay silent (used to throttle logging per frame).
@@ -272,7 +275,7 @@ class LaneDetector:
             ``x = f(y)`` plus the fitted y-range, or ``([], None)`` when
             the blob was rejected.
         """
-        ys, xs = np.where(mask == 1)
+        ys, xs = np.where(mask)
         # Require enough points and sufficient vertical spread for a stable fit
         min_pts = max(self._poly_degree + 1, 10)
         if len(ys) < min_pts:
@@ -311,12 +314,12 @@ class LaneDetector:
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', np.RankWarning)
-                coeffs = np.polyfit(ys, xs + x_offset, self._poly_degree)
+                coeffs = np.polyfit(ys, xs, self._poly_degree)
             # if side:
             #     self._log.info(
             #         f'[DIAG:fit] {side} OK — {len(ys)} px  '
             #         f'y=[{int(ys.min())}..{int(ys.max())}]  '
-            #         f'x=[{int(xs.min()) + x_offset}..{int(xs.max()) + x_offset}]  '
+            #         f'x=[{int(xs.min())}..{int(xs.max())}]  '
             #         f'coeffs=[{" ".join(f"{c:+.4e}" for c in coeffs)}]'
             #     )
             return coeffs.tolist(), (int(ys.min()), int(ys.max()))
@@ -324,6 +327,41 @@ class LaneDetector:
             if side:
                 self._log.warn(f'[DIAG:fit] {side} REJECT — polyfit failed: {exc}')
             return [], None
+
+    @staticmethod
+    def _adaptive_midline(da_seg_mask: np.ndarray, w_frame: int) -> np.ndarray:
+        """Per-row left/right split column, tracked from the drivable-area mask.
+
+        Returns an array of shape ``(H,)`` giving, for each row, the x
+        column that separates "left" from "right" lane pixels. That column
+        is the midpoint of the drivable-area mask's own extent on that row
+        (rather than a fixed ``w_frame // 2``), so the split follows the
+        road as it curves or the camera tilts/rolls. Rows where the
+        drivable-area mask has no pixels (e.g. above the horizon) reuse the
+        nearest row above that did; rows before any such row fall back to
+        the frame's center column.
+        """
+        h = da_seg_mask.shape[0]
+        da_bool = da_seg_mask.astype(bool)
+        cols = np.arange(w_frame)
+
+        row_has = da_bool.any(axis=1)
+        xs_min = np.where(da_bool, cols, w_frame).min(axis=1)
+        xs_max = np.where(da_bool, cols, -1).max(axis=1)
+        row_mid = (xs_min + xs_max) / 2.0
+
+        # Forward-fill: carry the last row with drivable-area pixels down
+        # to subsequent rows that lack them.
+        last_valid_row = np.where(row_has, np.arange(h), -1)
+        np.maximum.accumulate(last_valid_row, out=last_valid_row)
+
+        default_mid = float(w_frame // 2)
+        mid_col = np.where(
+            last_valid_row >= 0,
+            row_mid[np.clip(last_valid_row, 0, h - 1)],
+            default_mid,
+        )
+        return mid_col
 
     @staticmethod
     def _draw_lane_fit(frame: np.ndarray, coeffs, span, color) -> None:
