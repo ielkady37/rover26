@@ -62,16 +62,32 @@ Subscribed
 ──────────
     /gps            (sensor_msgs/NavSatFix)
 
+Waypoint source  [CHANGED]
+───────────────────────────
+Waypoint lat/lon now comes from mission.yaml's `waypoints:` list (the same
+file MissionManagerNode reads), not from separate waypoint_lats /
+waypoint_lons / waypoint_ids ROS params — one source of truth for "where
+are WP1/WP2/WP3", instead of two config surfaces that could drift out of
+sync with each other. Expected mission.yaml shape:
+
+    waypoints:
+      - id: "WP1"
+        lat: 40.7128
+        lon: -74.0060
+      - id: "WP2"
+        lat: 40.7130
+        lon: -74.0058
+      - id: "WP3"
+        lat: 40.7132
+        lon: -74.0061
+
 Parameters
 ──────────
-    waypoint_lats      (list[float], [])       latitudes  of WP1, WP2, WP3 in order
-    waypoint_lons      (list[float], [])       longitudes of WP1, WP2, WP3 in order
-    waypoint_ids       (list[str],   [])       optional labels, e.g. ["WP1","WP2","WP3"]
     map_frame          (str, 'map')
-    base_frame         (str, 'base_link')
-    wp1_tolerance_m    (float, 1.5)            logs a "within tolerance" message for WP1
-    origin_sample_count (int, 10)              number of fixes averaged to fix the origin
-    smoothing_window    (int, 5)               number of fixes averaged for /gps_xy output
+    base_frame          (str, 'base_link')
+    wp1_tolerance_m     (float, 1.5)            logs a "within tolerance" message for WP1
+    origin_sample_count (int, 10)               number of fixes averaged to fix the origin
+    smoothing_window    (int, 5)                number of fixes averaged for /gps_xy output
 """
 import math
 from collections import deque
@@ -82,6 +98,8 @@ from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReli
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 from nav_msgs.msg import Path, Odometry
 from geometry_msgs.msg import PoseStamped
+
+from utils.Configurator import Configurator
 
 # WGS84 mean earth radius, metres — fine for the equirectangular approximation
 _R_EARTH = 6378137.0
@@ -101,33 +119,38 @@ class GPSWaypointNode(Node):
     def __init__(self) -> None:
         super().__init__("gps_waypoint_node")
 
-        # parameters
-        self.declare_parameter("waypoint_lats", [0.0])
-        self.declare_parameter("waypoint_lons", [0.0])
-        self.declare_parameter("waypoint_ids", [""])
+        # ── Waypoints — sourced from mission.yaml  [CHANGED] ─────────────────
+        # Single source of truth shared with MissionManagerNode: no more
+        # separate waypoint_lats/waypoint_lons/waypoint_ids ROS params that
+        # could silently drift out of sync with mission.yaml's own list.
+        conf = Configurator()
+        mission_data = conf.fetchData(Configurator.MISSION) or {}
+        wp_entries = mission_data.get("waypoints", [])
+
+        if not isinstance(wp_entries, list) or len(wp_entries) == 0:
+            self.get_logger().error(
+                "GPSWaypointNode: mission.yaml 'waypoints' is empty or missing — "
+                "no waypoints to convert. Fill in id/lat/lon for WP1/WP2/WP3."
+            )
+
+        self._lats = [float(e.get("lat", 0.0)) for e in wp_entries]
+        self._lons = [float(e.get("lon", 0.0)) for e in wp_entries]
+        self._ids = [str(e.get("id", f"WP{i + 1}")) for i, e in enumerate(wp_entries)]
+
+        # ── Tuning parameters — these stay as ROS params (they're per-node
+        # tuning, not waypoint identity data, so mission.yaml isn't the
+        # right home for them) ────────────────────────────────────────────
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("base_frame", "base_link")
         self.declare_parameter("wp1_tolerance_m", 1.5)
-        self.declare_parameter("origin_sample_count",50)
+        self.declare_parameter("origin_sample_count", 50)
         self.declare_parameter("smoothing_window", 20)
 
-        self._lats = list(self.get_parameter("waypoint_lats").value)
-        self._lons = list(self.get_parameter("waypoint_lons").value)
-        ids = list(self.get_parameter("waypoint_ids").value)
-        self._ids = ids if len(ids) == len(self._lats) else [
-            f"WP{i + 1}" for i in range(len(self._lats))
-        ]
         self._map_frame = self.get_parameter("map_frame").value
         self._base_frame = self.get_parameter("base_frame").value
         self._wp1_tol = float(self.get_parameter("wp1_tolerance_m").value)
         self._origin_sample_count = max(1, int(self.get_parameter("origin_sample_count").value))
         self._smoothing_window = max(1, int(self.get_parameter("smoothing_window").value))
-
-        if len(self._lats) != len(self._lons):
-            self.get_logger().error(
-                "waypoint_lats and waypoint_lons must be the same length — "
-                f"got {len(self._lats)} lats and {len(self._lons)} lons."
-            )
 
         # latched publisher: MissionManager (or anything else) can start after
         # this node and still receive the one-time waypoint conversion
@@ -153,7 +176,7 @@ class GPSWaypointNode(Node):
         self.get_logger().info(
             f"GPSWaypointNode up — averaging {self._origin_sample_count} fixes to fix the "
             f"local origin, smoothing /gps_xy over {self._smoothing_window} fixes "
-            f"({len(self._lats)} waypoints loaded)."
+            f"({len(self._lats)} waypoints loaded from mission.yaml: {self._ids})"
         )
 
     # /gps

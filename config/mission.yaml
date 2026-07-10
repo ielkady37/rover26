@@ -1,18 +1,23 @@
-# Computer Vision parameters
 vision_timeout_sec: 120.0
 min_confidence_score: 0.80
 
-# Navigation Waypoints (x, y, yaw in radians)
-waypoints: []
-  # - id: "WP1"
-  #   x: 0.0
-  #   y: 0.0
-  #   yaw: 0.0
-  # - id: "WP2"    # Target detection triggers upon reaching this waypoint
-  #   x: 0.0
-  #   y: 0.0
-  #   yaw: 0.0
-  # - id: "WP3"
-  #   x: 0.0
-  #   y: 0.0
-  #   yaw: 0.0
+# GPS-driven autonomous sub-state machine (MissionManagerNode)
+wp_arrival_tolerance_m: 3.0   # LANE -> GPS_WAYPOINT trigger distance to WP1 (above ~2.5m GPS CEP)
+mission_spin_vel: 0.6         # rad/s, used during FACE_DETECTION and LANE_SCAN spins
+nav_goal_retry_sec: 4.0       # retry period for a rejected/pending GPS_WAYPOINT Nav2 goal
+
+# Competition waypoints — latitude/longitude, NOT local x/y/yaw.
+# GPSWaypointNode reads this same list and does the one-time lat/lon -> local
+# x,y conversion at boot (see gps_waypoint_node.py). This is the single
+# source of truth for waypoint position; there is no separate x/y/yaw
+# config anywhere else.
+waypoints:
+  - id: "WP1"
+    lat: 31.2085398
+    lon: 29.9217330
+  - id: "WP2"    # Target detection + laser lock triggers upon reaching this waypoint
+    lat: 0.0
+    lon: 0.0
+  - id: "WP3"
+    lat: 0.0
+    lon: 0.0
