@@ -297,7 +297,7 @@ class Physical:
     #
     # Last calibrated 2026-07-11: raw offset measured at +1.271 m while
     # centred and driving straight → trim set to -1.271.
-    LATERAL_BIAS_M: float = 0
+    LATERAL_BIAS_M: float = 1.271
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
