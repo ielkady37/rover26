@@ -1,5 +1,5 @@
 fisheye_camera:
-  index: /home/seelie/Downloads/lane.mp4
+  index: /dev/Fisheye 
   width: 1280
   height: 720
   fps: 30

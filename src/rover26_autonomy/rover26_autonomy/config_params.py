@@ -109,7 +109,7 @@ class LaneGoalPublisher:
     # NO NavigateToPose action is dispatched and recovery spins are disabled.
     # Use when bench-testing with only lane_detection_node running.
     # MUST be False for real driving.
-    DEBUG_STANDALONE: bool = True
+    DEBUG_STANDALONE: bool = False
 
     # ── Curvature thresholds ───────────────────────────────────────────────────
     # Measured on the perspective 1280x720 frame a STRAIGHT road already shows

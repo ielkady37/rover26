@@ -206,7 +206,7 @@ local_costmap:
         z_resolution: 0.05
         z_voxels: 16
         max_obstacle_height: 2.0
-        mark_threshold: 0
+        mark_threshold: 1
         observation_sources: scan
         scan:
           topic: /scan
@@ -290,6 +290,7 @@ planner_server:
       w_euc_cost: 10.0
       w_traversal_cost: 1.0
       w_heuristic_param: 1.0
+      allow_unknown: true  
 
 smoother_server:
   ros__parameters:
