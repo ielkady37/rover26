@@ -242,11 +242,18 @@ def generate_launch_description():
                     output='screen',
                 ),
                 
+                # Node(
+                #     package='rover26_autonomy',
+                #     executable='lane_goal_publisher',
+                #     name='lane_goal_publisher',
+                #     output='screen',
+                # ),
+
                 Node(
                     package='rover26_autonomy',
-                    executable='lane_goal_publisher',
-                    name='lane_goal_publisher',
-                    output='screen',                
+                    executable='simple_lane_goal',
+                    name='simple_lane_goal',
+                    output='screen',
                 ),
             ],
         ),
