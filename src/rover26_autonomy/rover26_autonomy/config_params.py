@@ -285,13 +285,19 @@ class Physical:
     # ── Lateral bias trim ──────────────────────────────────────────────────────
     # HOW TO CALIBRATE
     # ────────────────
-    #   1. Set LATERAL_BIAS_M = 0.0 and rebuild.
-    #   2. Drive the rover straight down a centred lane.
-    #   3. Read "lateral=X.XXm" from lane_goal_publisher log output.
-    #      e.g. "lateral=0.43m" means the formula thinks the rover is 0.43 m left of centre.
-    #   4. Set LATERAL_BIAS_M to that value and rebuild.
-    #   5. Log should now show "lateral≈0.00m" when centred.
-    LATERAL_BIAS_M: float = 0.13
+    #   1. Drive the rover straight down a centred lane.
+    #   2. Read "y_lat raw=X.XXX" from the [DIAG:norm] line in
+    #      lane_goal_publisher log output (this is the offset BEFORE trim
+    #      is applied, so it's unaffected by the current LATERAL_BIAS_M).
+    #   3. Set LATERAL_BIAS_M to the NEGATIVE of that value — the code does
+    #      y_lat += LATERAL_BIAS_M, so cancelling a raw offset of +0.43 m
+    #      requires a trim of -0.43, not +0.43.
+    #   4. Rebuild. [DIAG:norm] "y_lat raw=... +trim=..." should now sum to
+    #      ≈0.00 m when centred.
+    #
+    # Last calibrated 2026-07-11: raw offset measured at +1.271 m while
+    # centred and driving straight → trim set to -1.271.
+    LATERAL_BIAS_M: float = -1.271
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
