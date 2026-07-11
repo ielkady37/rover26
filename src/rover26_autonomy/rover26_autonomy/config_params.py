@@ -165,8 +165,8 @@ class LaneGoalPublisher:
     # ── Goal update throttle (minimum displacement between consecutive goals) ──
     # Prevents flooding Nav2 with nearly identical goals. Each new NavigateToPose
     # goal triggers one full planning call regardless of the BT.
-    UPDATE_M_STRAIGHT: float = 0.50   # One planning call every ~5s at 0.5 m/s
-    UPDATE_M_CURVE:    float = 0.40   # Denser on curves but not excessive
+    UPDATE_M_STRAIGHT: float = 3.00   # One planning call roughly every 1 m of travel
+    UPDATE_M_CURVE:    float = 1.00   # Same cadence on gentle curves
     UPDATE_M_SHARP:    float = 0.10   # Very dense during 90° turns
 
     # ── Goal proximity tolerance ────────────────────────────────────────────────
@@ -280,7 +280,7 @@ class Physical:
     # visible road. Sets goal distance: x_fwd = (1 - py/IMG_H) * this * 0.92.
     # If goals land too close, raise it; too far, lower it.
     GROUND_HEIGHT_M: float = 10.0
-    LANE_WIDTH_M:    float = 6.0   # Physical lane width (metres) — measure on your track
+    LANE_WIDTH_M:    float = 4.0   # Physical lane width (metres) — measure on your track
 
     # ── Lateral bias trim ──────────────────────────────────────────────────────
     # HOW TO CALIBRATE
@@ -297,7 +297,7 @@ class Physical:
     #
     # Last calibrated 2026-07-11: raw offset measured at +1.271 m while
     # centred and driving straight → trim set to -1.271.
-    LATERAL_BIAS_M: float = -1.271
+    LATERAL_BIAS_M: float = 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
