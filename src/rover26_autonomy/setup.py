@@ -39,6 +39,7 @@ setup(
 
             # Lane goal publisher
             'lane_goal_publisher     = rover26_autonomy.nodes.lane_goal_publisher:main',
+            'simple_lane_goal        = rover26_autonomy.nodes.simple_lane_goal:main',
 
             # Utilities
             'odom_tf_broadcaster     = rover26_autonomy.nodes.odom_tf_broadcaster:main',

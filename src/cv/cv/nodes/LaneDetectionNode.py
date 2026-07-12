@@ -94,7 +94,7 @@ class LaneDetectionNode(LifecycleNode):
             )
             self._cam_sub = self.create_subscription(
                 Image,
-                f'/{self._cam_name}/uncalibrated',
+                f'/{self._cam_name}/calibrated',
                 self._on_frame,
                 image_qos,
             )

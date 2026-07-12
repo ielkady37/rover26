@@ -127,12 +127,16 @@ class LaneGoalPublisher:
     # above that extrapolates the polynomials outside their fitted range and
     # produces garbage (negative lane widths, ±10 m lateral offsets). Keep all
     # three fractions comfortably below the horizon.
-    # PY_FAR  = 0.60 → far look-ahead on straights (stable)
-    # PY_NEAR = 0.72 → closer on curves (goal stays on the arc, not the chord)
-    # PY_SHARP= 0.75 → very close stepping stones on sharp turns
-    PY_FAR:   float = 0.60
-    PY_NEAR:  float = 0.72
-    PY_SHARP: float = 0.75
+    # PY_FAR  = 0.50 → far look-ahead on straights (stable, away from the
+    #                  fisheye near-field where lane width is exaggerated)
+    # PY_NEAR = 0.62 → closer on curves (goal stays on the arc, not the chord)
+    # PY_SHARP= 0.65 → very close stepping stones on sharp turns
+    # Still ~0.08 above the ~0.42 horizon floor documented above — if you push
+    # these lower, watch the annotated lane overlay: py must stay within the
+    # visibly-drawn fitted line, or you're extrapolating past real pixels.
+    PY_FAR:   float = 0.50
+    PY_NEAR:  float = 0.62
+    PY_SHARP: float = 0.65
 
     # ── Sharp-turn goal projection ─────────────────────────────────────────────
     # Fixed forward distance for each stepping stone in sharp-turn mode.
@@ -161,8 +165,8 @@ class LaneGoalPublisher:
     # ── Goal update throttle (minimum displacement between consecutive goals) ──
     # Prevents flooding Nav2 with nearly identical goals. Each new NavigateToPose
     # goal triggers one full planning call regardless of the BT.
-    UPDATE_M_STRAIGHT: float = 0.50   # One planning call every ~5s at 0.5 m/s
-    UPDATE_M_CURVE:    float = 0.40   # Denser on curves but not excessive
+    UPDATE_M_STRAIGHT: float = 3.00   # One planning call roughly every 1 m of travel
+    UPDATE_M_CURVE:    float = 1.00   # Same cadence on gentle curves
     UPDATE_M_SHARP:    float = 0.10   # Very dense during 90° turns
 
     # ── Goal proximity tolerance ────────────────────────────────────────────────
@@ -276,18 +280,24 @@ class Physical:
     # visible road. Sets goal distance: x_fwd = (1 - py/IMG_H) * this * 0.92.
     # If goals land too close, raise it; too far, lower it.
     GROUND_HEIGHT_M: float = 10.0
-    LANE_WIDTH_M:    float = 6.0   # Physical lane width (metres) — measure on your track
+    LANE_WIDTH_M:    float = 4.0   # Physical lane width (metres) — measure on your track
 
     # ── Lateral bias trim ──────────────────────────────────────────────────────
     # HOW TO CALIBRATE
     # ────────────────
-    #   1. Set LATERAL_BIAS_M = 0.0 and rebuild.
-    #   2. Drive the rover straight down a centred lane.
-    #   3. Read "lateral=X.XXm" from lane_goal_publisher log output.
-    #      e.g. "lateral=0.43m" means the formula thinks the rover is 0.43 m left of centre.
-    #   4. Set LATERAL_BIAS_M to that value and rebuild.
-    #   5. Log should now show "lateral≈0.00m" when centred.
-    LATERAL_BIAS_M: float = 0.13
+    #   1. Drive the rover straight down a centred lane.
+    #   2. Read "y_lat raw=X.XXX" from the [DIAG:norm] line in
+    #      lane_goal_publisher log output (this is the offset BEFORE trim
+    #      is applied, so it's unaffected by the current LATERAL_BIAS_M).
+    #   3. Set LATERAL_BIAS_M to the NEGATIVE of that value — the code does
+    #      y_lat += LATERAL_BIAS_M, so cancelling a raw offset of +0.43 m
+    #      requires a trim of -0.43, not +0.43.
+    #   4. Rebuild. [DIAG:norm] "y_lat raw=... +trim=..." should now sum to
+    #      ≈0.00 m when centred.
+    #
+    # Last calibrated 2026-07-11: raw offset measured at +1.271 m while
+    # centred and driving straight → trim set to -1.271.
+    LATERAL_BIAS_M: float = 0.4
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
