@@ -227,6 +227,7 @@ class ManualNavigationNode(LifecycleNode):
             msg.m2_speed = float(abs(cmd_dto.left_pwm)) * 2
             msg.m2_dir = int(cmd_dto.left_dir)
             msg.m2_brake = int(cmd_dto.left_brake)
+            msg.flash = int(0)
 
             # Override direction bits if speed mapping changed polarity
             if cmd_dto.right_pwm < 0: msg.m1_dir = 1 if msg.m1_dir == 0 else 0
@@ -245,6 +246,7 @@ class ManualNavigationNode(LifecycleNode):
             msg.m2_brake = 1
             msg.m1_speed = 0.0
             msg.m2_speed = 0.0
+            msg.flash = int(0)
             self.motor_pub.publish(msg)
 
             if hasattr(self, 'navigation_service'):

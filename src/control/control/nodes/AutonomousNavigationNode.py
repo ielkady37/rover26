@@ -6,7 +6,7 @@ from geometry_msgs.msg import Twist
 from std_msgs.msg import Bool
 
 import time
-from interfaces.msg import ActuatorCommand
+from interfaces.msg import ActuatorCommand, FaceRecognitionResult
 from interfaces.msg import EulerAngles
 from control.services.Navigation import Navigation
 from control.services.Kinematics import Kinematics
@@ -36,6 +36,9 @@ class AutonomousNavigationNode(LifecycleNode):
         self.max_heading_correction = 0.3  # rad/s, overwritten from YAML in on_configure
         self._straight_threshold = 0.05    # rad/s — below this, Nav2 is considered "going straight"
         self.kill_active = False
+        self._laser_enabled = False
+        self._laser_until = 0.0
+        self._laser_latch_sec = 0.75
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring AutonomousNavigationNode...")
@@ -55,6 +58,7 @@ class AutonomousNavigationNode(LifecycleNode):
             self.watchdog_timeout = float(kin_data.get('watchdog_timeout_sec', 0.5))
             max_pwm = int(kin_data.get('max_pwm', 255))
             self.rotation_gain = float(kin_data.get('rotation_gain', 2.0))
+            self._laser_latch_sec = float(kin_data.get('laser_latch_sec', 0.75))
 
             # Heading-assist trim bounds (kept small on purpose — this is a
             # correction on top of Nav2's own angular command, not a substitute
@@ -89,6 +93,9 @@ class AutonomousNavigationNode(LifecycleNode):
             euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.euler_sub = self.create_subscription(EulerAngles, '/euler', self.euler_callback, euler_qos)
 
+            face_recognition_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.RELIABLE)
+            self.face_recognition_sub = self.create_subscription(FaceRecognitionResult, '/face_recognition', self.face_recognition_callback, face_recognition_qos)
+
             # 4. Setup Watchdog Timer (runs at 10Hz)
             self.watchdog_timer = self.create_timer(0.1, self.watchdog_callback)
             self.watchdog_timer.cancel() # Keep dormant until active
@@ -112,7 +119,7 @@ class AutonomousNavigationNode(LifecycleNode):
         self._log.info("Deactivating Autonomous Navigation...")
         super().on_deactivate(state)
         self.watchdog_timer.cancel()
-        self.publish_safe_stop()
+        self.publish_safe_stop(force_laser_off=True)
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: LifecycleState) -> TransitionCallbackReturn:
@@ -128,7 +135,7 @@ class AutonomousNavigationNode(LifecycleNode):
         self._log.info("Shutting down...")
         if self.watchdog_timer:
             self.watchdog_timer.cancel()
-        self.publish_safe_stop()
+        self.publish_safe_stop(force_laser_off=True)
         return TransitionCallbackReturn.SUCCESS
 
     def euler_callback(self, msg: EulerAngles):
@@ -148,7 +155,7 @@ class AutonomousNavigationNode(LifecycleNode):
             self.kill_active = requested
             if self.kill_active:
                 self._heading_locked = False
-                self.publish_safe_stop()
+                self.publish_safe_stop(force_laser_off=True)
                 self._log.warn("Kill switch active: publishing safe stop.")
             else:
                 self._log.info("Kill switch released.")
@@ -158,7 +165,7 @@ class AutonomousNavigationNode(LifecycleNode):
     def cmd_vel_callback(self, msg: Twist):
         try:
             if self.kill_active:
-                self.publish_safe_stop()
+                self.publish_safe_stop(force_laser_off=True)
                 return
 
             now = time.time()
@@ -209,7 +216,7 @@ class AutonomousNavigationNode(LifecycleNode):
             if cmd_dto is None:
                 self._log.err("cmd_dto is None. Skipping publish.")
                 return
-
+            
             act_msg = ActuatorCommand()
             act_msg.m2_speed = 4.0 * float(cmd_dto.left_pwm)
             act_msg.m2_dir   = int(cmd_dto.left_dir)
@@ -218,8 +225,8 @@ class AutonomousNavigationNode(LifecycleNode):
             act_msg.m1_dir   = int(cmd_dto.right_dir)
             act_msg.m1_brake = int(cmd_dto.right_brake)
             act_msg.flash    = int(1)
-            act_msg.laser    = int(0)
             act_msg.servo    = float(0.0)
+            act_msg.laser = int(self._is_laser_active())
 
             self.motor_pub.publish(act_msg)
 
@@ -227,10 +234,28 @@ class AutonomousNavigationNode(LifecycleNode):
             self._log.err(f"Exception in /cmd_vel callback: {e}")
             self.publish_safe_stop()
 
+    def face_recognition_callback(self, msg: FaceRecognitionResult):
+        try:
+            if msg.target_detected and msg.lock_confirmed:
+                self._laser_enabled = True
+                self._laser_until = time.time() + max(self._laser_latch_sec, 0.0)
+            elif time.time() >= self._laser_until:
+                self._laser_enabled = False
+        except Exception as e:
+            self._log.err(f"Error processing /face_recognition callback: {e}")
+
+    def _is_laser_active(self) -> bool:
+        if self._laser_enabled and time.time() < self._laser_until:
+            return True
+        if self._laser_enabled and time.time() >= self._laser_until:
+            self._laser_enabled = False
+        return False
+
+
     def watchdog_callback(self):
         try:
             if self.kill_active:
-                self.publish_safe_stop()
+                self.publish_safe_stop(force_laser_off=True)
                 return
 
             time_since_last_cmd = time.time() - self.last_cmd_time
@@ -251,7 +276,7 @@ class AutonomousNavigationNode(LifecycleNode):
         except Exception as e:
             self._log.err(f"Watchdog error: {e}")
 
-    def publish_safe_stop(self):
+    def publish_safe_stop(self, force_laser_off: bool = False):
         try:
             msg = ActuatorCommand() 
             msg.m1_speed = float(0.0)
@@ -261,7 +286,7 @@ class AutonomousNavigationNode(LifecycleNode):
             msg.m2_dir   = int(0)
             msg.m2_brake = int(1)
             msg.flash    = int(1)
-            msg.laser    = int(0)
+            msg.laser    = int(0) if force_laser_off else int(self._is_laser_active())
             msg.servo    = float(0.0)
             self.motor_pub.publish(msg)
         except Exception as e:

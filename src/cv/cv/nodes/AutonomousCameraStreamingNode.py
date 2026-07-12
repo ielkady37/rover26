@@ -20,6 +20,7 @@ class AutonomousCameraStreamingNode(LifecycleNode):
         self._cam_publishers: dict[str, dict] = {}
         self._cam_timers: list = []
         self._capture_threads: list[threading.Thread] = []
+        self._activation_thread: threading.Thread = None
         self._cameras_config: dict = {}
 
         # Latest frame per camera — written by capture thread, read by timer callback
@@ -51,7 +52,6 @@ class AutonomousCameraStreamingNode(LifecycleNode):
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self._logger.info('Activating camera streamer node...')
         self._running = True
-        active_cameras = []
 
         for camera_name, config in self._cameras_config.items():
             streamer = AutonomousCameraStreamer(camera_name, config)
@@ -63,7 +63,33 @@ class AutonomousCameraStreamingNode(LifecycleNode):
                 f"({'stereo' if streamer.is_stereo else 'mono'})"
             )
 
+        # Opening a camera retries for up to 10s each (see
+        # AutonomousCameraStreamer._OPEN_TIMEOUT). Doing that inline here,
+        # for every configured camera, can block this ChangeState service
+        # call long enough that the middleware gives up delivering the
+        # response to MissionManagerNode before we ever return. Do the actual
+        # opening + capture-thread/timer setup in the background instead;
+        # cameras come online as each finishes opening.
+        self._activation_thread = threading.Thread(
+            target=self._open_cameras_and_start,
+            daemon=True,
+            name='camera_open_worker',
+        )
+        self._activation_thread.start()
+
+        self._logger.info('Camera streamer node activation dispatched in background.')
+        return super().on_activate(state)
+
+    def _open_cameras_and_start(self) -> None:
+        """Runs in a background thread — opens each camera (which can retry
+        for up to 10s) and wires up its capture thread + publish timer as
+        soon as it succeeds, without blocking the on_activate response.
+        """
+        active_cameras = []
         for name, streamer in self._streamers.items():
+            if not self._running:
+                return
+
             self._logger.info(f"Opening camera '{name}'...")
             if streamer.open():
                 self._logger.info(f"Camera '{name}' opened successfully.")
@@ -82,36 +108,35 @@ class AutonomousCameraStreamingNode(LifecycleNode):
                 )
                 t.start()
                 self._capture_threads.append(t)
+
+                fps = streamer._config.get('fps', 30)
+                period = 1.0 / float(fps)
+                timer = self.create_timer(
+                    period,
+                    self._make_timer_callback(name, self._cam_publishers[name])
+                )
+                self._cam_timers.append(timer)
             else:
                 self._logger.error(
                     f"Camera '{name}' could not be opened after 10 s — skipping."
                 )
 
         if not active_cameras:
-            self._running = False
-            self._logger.error('All cameras failed to open. Cannot activate.')
-            return TransitionCallbackReturn.FAILURE
-
-        # Timer callbacks only grab the latest frame and publish — no blocking I/O
-        for name in active_cameras:
-            fps = self._streamers[name]._config.get('fps', 30)
-            period = 1.0 / float(fps)
-            timer = self.create_timer(
-                period,
-                self._make_timer_callback(name, self._cam_publishers[name])
+            self._logger.error('All cameras failed to open. No camera topics are active.')
+        else:
+            self._logger.info(
+                f'Camera streamer node active with cameras: {active_cameras}'
             )
-            self._cam_timers.append(timer)
-
-        self._logger.info(
-            f'Camera streamer node active with cameras: {active_cameras}'
-        )
-        return super().on_activate(state)
 
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
         self._logger.info('Deactivating camera streamer node...')
 
-        # Signal capture threads to stop, then wait for them
+        # Signal the background activation worker and capture threads to
+        # stop, then wait for them
         self._running = False
+        if self._activation_thread is not None:
+            self._activation_thread.join(timeout=2.0)
+            self._activation_thread = None
         for t in self._capture_threads:
             t.join(timeout=2.0)
         self._capture_threads.clear()
@@ -136,6 +161,9 @@ class AutonomousCameraStreamingNode(LifecycleNode):
     def on_shutdown(self, state: State) -> TransitionCallbackReturn:
         self._logger.info('Shutting down camera streamer node...')
         self._running = False
+        if self._activation_thread is not None:
+            self._activation_thread.join(timeout=2.0)
+            self._activation_thread = None
         for streamer in self._streamers.values():
             streamer.release()
         self._streamers.clear()
