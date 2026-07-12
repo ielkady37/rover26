@@ -3,6 +3,7 @@ import rclpy
 from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackReturn
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Bool
 
 import time
 from interfaces.msg import ActuatorCommand
@@ -34,6 +35,7 @@ class AutonomousNavigationNode(LifecycleNode):
         self._last_heading_pid_time = time.time()
         self.max_heading_correction = 0.3  # rad/s, overwritten from YAML in on_configure
         self._straight_threshold = 0.05    # rad/s — below this, Nav2 is considered "going straight"
+        self.kill_active = False
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring AutonomousNavigationNode...")
@@ -82,6 +84,7 @@ class AutonomousNavigationNode(LifecycleNode):
 
             cmd_vel_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.cmd_vel_sub = self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_callback, cmd_vel_qos)
+            self.kill_sub = self.create_subscription(Bool, '/kill', self.kill_callback, 10)
 
             euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.euler_sub = self.create_subscription(EulerAngles, '/euler', self.euler_callback, euler_qos)
@@ -117,6 +120,7 @@ class AutonomousNavigationNode(LifecycleNode):
         self.destroy_timer(self.watchdog_timer)
         self.destroy_subscription(self.cmd_vel_sub)
         self.destroy_subscription(self.euler_sub)
+        self.destroy_subscription(self.kill_sub)
         self.destroy_publisher(self.motor_pub)
         return TransitionCallbackReturn.SUCCESS
 
@@ -136,8 +140,27 @@ class AutonomousNavigationNode(LifecycleNode):
         except Exception as e:
             self._log.err(f"Error processing /euler callback: {e}")
 
+    def kill_callback(self, msg: Bool):
+        try:
+            requested = bool(msg.data)
+            if requested == self.kill_active:
+                return
+            self.kill_active = requested
+            if self.kill_active:
+                self._heading_locked = False
+                self.publish_safe_stop()
+                self._log.warn("Kill switch active: publishing safe stop.")
+            else:
+                self._log.info("Kill switch released.")
+        except Exception as e:
+            self._log.err(f"Error processing /kill callback: {e}")
+
     def cmd_vel_callback(self, msg: Twist):
         try:
+            if self.kill_active:
+                self.publish_safe_stop()
+                return
+
             now = time.time()
             heading_dt = now - self._last_heading_pid_time
             self._last_heading_pid_time = now
@@ -206,6 +229,10 @@ class AutonomousNavigationNode(LifecycleNode):
 
     def watchdog_callback(self):
         try:
+            if self.kill_active:
+                self.publish_safe_stop()
+                return
+
             time_since_last_cmd = time.time() - self.last_cmd_time
             if time_since_last_cmd > self.watchdog_timeout:
                 # Only log on the transition into "tripped" so this doesn't

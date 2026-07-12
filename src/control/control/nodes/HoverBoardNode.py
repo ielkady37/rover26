@@ -4,6 +4,7 @@ import time
 import serial
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Bool
 from interfaces.msg import ActuatorCommand as ActuatorCommandMsg, EncoderSpeeds
 from utils.Logger import RoverLogger
 
@@ -99,6 +100,7 @@ class HoverBoardNode(Node):
         self._last_steer: int = 0
         self._last_speed: int = 0
         self._last_cmd_time: float = 0.0
+        self._kill_active: bool = False
 
         # ── accumulation buffer for partial frames ───────────────────────
         self._rx_buf = bytearray()
@@ -122,6 +124,7 @@ class HoverBoardNode(Node):
         self._cmd_sub = self.create_subscription(
             ActuatorCommandMsg, "/esp_tx", self._cmd_cb, 10
         )
+        self._kill_sub = self.create_subscription(Bool, "/kill", self._kill_cb, 10)
 
         # ── timers ─────────────────────────────────────────────────────────
         self._read_timer = self.create_timer(1.0 / read_hz, self._read_tick)
@@ -205,6 +208,12 @@ class HoverBoardNode(Node):
     # regardless of whether new /esp_tx messages are arriving.
 
     def _cmd_cb(self, msg: ActuatorCommandMsg) -> None:
+        if self._kill_active:
+            self._last_steer = 0
+            self._last_speed = 0
+            self._last_cmd_time = time.time()
+            return
+
         left  = max(0.0, min(1.0, float(msg.m1_speed) / 255.0))
         right = max(0.0, min(1.0, float(msg.m2_speed) / 255.0))
 
@@ -236,11 +245,35 @@ class HoverBoardNode(Node):
         self._last_speed = speed
         self._last_cmd_time = time.time()
 
+    def _kill_cb(self, msg: Bool) -> None:
+        requested = bool(msg.data)
+        if requested == self._kill_active:
+            return
+
+        self._kill_active = requested
+        if self._kill_active:
+            self._last_steer = 0
+            self._last_speed = 0
+            self._last_cmd_time = time.time()
+            self._logger.warn("Kill switch active: forcing hoverboard zero command.")
+            if self._connected:
+                try:
+                    self._serial.write(_build_tx_frame(0, 0))
+                except Exception as e:
+                    self._logger.warn(f"Hoverboard kill write failed: {e}")
+                    self._try_reconnect()
+        else:
+            self._logger.info("Kill switch released.")
+
     # ── heartbeat tick: sends the current target continuously ────────────
 
     def _send_tick(self) -> None:
         if not self._connected:
             return  # _read_tick drives reconnect attempts; nothing to send yet
+
+        if self._kill_active:
+            self._last_steer = 0
+            self._last_speed = 0
 
         # Safety watchdog: if no /esp_tx message has arrived recently,
         # zero out rather than keep repeating a stale nonzero command.
