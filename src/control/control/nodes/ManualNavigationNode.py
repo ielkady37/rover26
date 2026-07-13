@@ -210,7 +210,7 @@ class ManualNavigationNode(LifecycleNode):
                 # Handle Right Side Channel
                 if abs(cmd_dto.right_pwm) > 0.1:
                     sign_r = 1.0 if cmd_dto.right_pwm >= 0 else -1.0
-                    scaled_r = MIN_PWM_FLOOR + (abs(cmd_dto.right_pwm) / self.max_pwm) * (self.max_pwm - MIN_PWM_FLOOR)
+                    scaled_r = MIN_PWM_FLOOR + (abs(cmd_dto.right_pwm) / self.max_pwm)  2 (self.max_pwm - MIN_PWM_FLOOR)
                     cmd_dto.right_pwm = (sign_r * min(max(scaled_r, MIN_PWM_FLOOR), self.max_pwm)) * 1.5
                 
                 # Handle Left Side Channel
@@ -221,13 +221,13 @@ class ManualNavigationNode(LifecycleNode):
 
             # Populate outbound Actuator message
             msg = ActuatorCommand()
-            msg.m1_speed = float(abs(cmd_dto.right_pwm)) * 2
+            msg.m1_speed = float(abs(cmd_dto.right_pwm))
             msg.m1_dir = int(cmd_dto.right_dir)
             msg.m1_brake = int(cmd_dto.right_brake)
-            msg.m2_speed = float(abs(cmd_dto.left_pwm)) * 2
+            msg.m2_speed = float(abs(cmd_dto.left_pwm))
             msg.m2_dir = int(cmd_dto.left_dir)
             msg.m2_brake = int(cmd_dto.left_brake)
-            msg.flash = int(0)
+            msg.flash = int(1)
 
             # Override direction bits if speed mapping changed polarity
             if cmd_dto.right_pwm < 0: msg.m1_dir = 1 if msg.m1_dir == 0 else 0
@@ -246,7 +246,7 @@ class ManualNavigationNode(LifecycleNode):
             msg.m2_brake = 1
             msg.m1_speed = 0.0
             msg.m2_speed = 0.0
-            msg.flash = int(0)
+            msg.flash = int(1)
             self.motor_pub.publish(msg)
 
             if hasattr(self, 'navigation_service'):
