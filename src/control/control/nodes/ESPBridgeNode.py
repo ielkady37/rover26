@@ -44,6 +44,7 @@ from builtin_interfaces.msg import Time
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import Imu, NavSatFix, NavSatStatus
 from geometry_msgs.msg import Quaternion, TransformStamped
+from std_msgs.msg import Bool
 from tf2_ros import TransformBroadcaster
 from interfaces.msg import EulerAngles, EncoderRevolutions, EncoderSpeeds, ActuatorCommand as ActuatorCommandMsg
 
@@ -107,6 +108,7 @@ class ESPBridgeNode(Node):
         self._actuator_ctrl = ESPDataController(UARTService(uart_actuator_comm))
         self._sensor_ready = False
         self._actuator_ready = False
+        self._kill_active = False
 
         # sensor init (non-fatal — node continues without sensor data on failure)
         try:
@@ -160,6 +162,7 @@ class ESPBridgeNode(Node):
             self._esp_tx_cb,
             10,
         )
+        self._kill_sub = self.create_subscription(Bool, "/kill", self._kill_cb, 10)
 
         # latest data cache — written by reader thread, read by timer
         self._latest_data: SensorData | None = None
@@ -188,6 +191,10 @@ class ESPBridgeNode(Node):
     # /esp_tx → actuator ESP32
 
     def _esp_tx_cb(self, msg: ActuatorCommandMsg) -> None:
+        if self._kill_active:
+            self._send_safe_stop_to_actuator()
+            return
+
         cmd = ActuatorCommand(
             motor1=MotorCommand(
                 dir=int(msg.m1_dir),
@@ -214,6 +221,37 @@ class ESPBridgeNode(Node):
         except SensorReadError as e:
             self.get_logger().warn(
                 f"Actuator write failed: {e}",
+                throttle_duration_sec=5.0,
+            )
+
+    def _kill_cb(self, msg: Bool) -> None:
+        requested = bool(msg.data)
+        if requested == self._kill_active:
+            return
+
+        self._kill_active = requested
+        if self._kill_active:
+            self.get_logger().warn("Kill switch active: forcing actuator safe stop.")
+            self._send_safe_stop_to_actuator()
+        else:
+            self.get_logger().info("Kill switch released.")
+
+    def _send_safe_stop_to_actuator(self) -> None:
+        if not self._actuator_ready:
+            return
+
+        safe_cmd = ActuatorCommand(
+            motor1=MotorCommand(dir=0, brake=1, speed=0.0),
+            motor2=MotorCommand(dir=0, brake=1, speed=0.0),
+            laser=0,
+            flash=1,
+            servo=0.0,
+        )
+        try:
+            self._actuator_ctrl.write(safe_cmd)
+        except SensorReadError as e:
+            self.get_logger().warn(
+                f"Actuator safe-stop write failed: {e}",
                 throttle_duration_sec=5.0,
             )
 

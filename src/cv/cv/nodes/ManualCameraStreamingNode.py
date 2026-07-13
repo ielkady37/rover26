@@ -1,4 +1,5 @@
 import signal
+import threading
 import time
 import rclpy
 from rclpy.lifecycle import LifecycleNode, TransitionCallbackReturn
@@ -49,8 +50,17 @@ class ManualCameraStreamingNode(LifecycleNode):
         try:
             self._logger.info("Activating camera streamer node...")
             self._shutdown_requested = False
-            self.runStreams()
-            self._logger.info("All camera streams activated.")
+            # runStreams() sleeps per camera to let devices settle — blocking
+            # here can take several seconds combined and stalls this
+            # ChangeState service call long enough that the middleware drops
+            # the response before the caller (MissionManagerNode) receives it.
+            # Run it in the background instead so the transition returns fast.
+            threading.Thread(
+                target=self.runStreams,
+                daemon=True,
+                name="camera_stream_startup",
+            ).start()
+            self._logger.info("Camera stream startup dispatched in background.")
             return TransitionCallbackReturn.SUCCESS
         except Exception as e:
             self._logger.error(f"Failed to activate: {e}")

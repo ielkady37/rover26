@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
+import os
+import threading
 import rclpy
 from cv_bridge import CvBridge
+from std_msgs.msg import String
 from sensor_msgs.msg import Image
 from utils.Logger import RoverLogger
 from utils.Configurator import Configurator
@@ -11,6 +14,9 @@ from rclpy.lifecycle import LifecycleNode, LifecycleState, TransitionCallbackRet
 
 _LOCK_FRAMES = 5
 _QOS_DEPTH = 10
+_TARGET_TOPIC = '/face_recognition/target_select'
+_TARGETS_DIR = 'targets'
+_SUPPORTED_TARGET_EXTS = ('.png', '.jpg', '.jpeg')
 
 class FaceRecognitionNode(LifecycleNode):
     """Subscribes to a raw camera topic, runs face/target recognition, and publishes results.
@@ -18,6 +24,7 @@ class FaceRecognitionNode(LifecycleNode):
     Topics
     ------
     Subscribed:  /{camera_name}/uncalibrated  (sensor_msgs/Image)
+    Subscribed:  /face_recognition/target_select (std_msgs/String)
     Published:   /face_recognition            (interfaces/FaceRecognitionResult)
     """
 
@@ -27,9 +34,13 @@ class FaceRecognitionNode(LifecycleNode):
         self._bridge = CvBridge()
         self._recognizer = None
         self._cam_name = ''
+        self._targets_dir = ''
         self._cam_sub = None
+        self._target_sub = None
         self._result_pub = None
         self._confirm_counter: int = 0
+        self._current_target_name: str = ''
+        self._recognizer_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Lifecycle hooks
@@ -53,15 +64,43 @@ class FaceRecognitionNode(LifecycleNode):
                 )
 
             self._cam_name = cam_name
-            self._recognizer = FaceRecognizer(fr_cfg, cam_cfg)
+            self._targets_dir = os.path.join(Configurator.getProjectRoot(), _TARGETS_DIR)
             target_img_path = str(fr_cfg.get('target_img_path', ''))
-            self._recognizer.load(target_img_path)
 
-            self._log.succ('FaceRecognitionNode: model loaded successfully.')
+            loaded_name = os.path.basename(target_img_path).strip()
+            self._current_target_name = os.path.splitext(loaded_name)[0] if loaded_name else ''
+
+            with self._recognizer_lock:
+                self._recognizer = None
+
+            # Loading YOLO + OSNet and building the target embedding can take
+            # several seconds (longer on first CUDA init) — doing that inline
+            # would stall this ChangeState response long enough for the
+            # middleware to drop it before MissionManagerNode ever sees it.
+            # Build/load in the background; on_activate/_on_frame guard on
+            # recognizer readiness in the meantime.
+            threading.Thread(
+                target=self._load_recognizer_async,
+                args=(fr_cfg, cam_cfg, target_img_path),
+                daemon=True,
+                name='face_recognizer_load',
+            ).start()
+
+            self._log.info('FaceRecognitionNode: model loading dispatched in background.')
             return TransitionCallbackReturn.SUCCESS
         except Exception as exc:
             self._log.err(f'FaceRecognitionNode on_configure failed: {exc}')
             return TransitionCallbackReturn.FAILURE
+
+    def _load_recognizer_async(self, fr_cfg: dict, cam_cfg: dict, target_img_path: str) -> None:
+        try:
+            recognizer = FaceRecognizer(fr_cfg, cam_cfg)
+            recognizer.load(target_img_path)
+            with self._recognizer_lock:
+                self._recognizer = recognizer
+            self._log.succ('FaceRecognitionNode: model loaded successfully.')
+        except Exception as exc:
+            self._log.err(f'FaceRecognitionNode: background model load failed: {exc}')
 
     def on_activate(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info('FaceRecognitionNode: activating...')
@@ -82,12 +121,21 @@ class FaceRecognitionNode(LifecycleNode):
                 self._on_frame,
                 image_qos,
             )
+            self._target_sub = self.create_subscription(
+                String,
+                _TARGET_TOPIC,
+                self._on_target_selected,
+                result_qos,
+            )
             self._result_pub = self.create_publisher(
                 FaceRecognitionResult, '/face_recognition', result_qos
             )
             self._confirm_counter = 0
             self._log.info(
                 f'FaceRecognitionNode: subscribed to /{self._cam_name}/calibrated'
+            )
+            self._log.info(
+                f'FaceRecognitionNode: waiting for target selections on {_TARGET_TOPIC}'
             )
             return TransitionCallbackReturn.SUCCESS
         except Exception as exc:
@@ -99,6 +147,9 @@ class FaceRecognitionNode(LifecycleNode):
         if self._cam_sub is not None:
             self.destroy_subscription(self._cam_sub)
             self._cam_sub = None
+        if self._target_sub is not None:
+            self.destroy_subscription(self._target_sub)
+            self._target_sub = None
         if self._result_pub is not None:
             self.destroy_publisher(self._result_pub)
             self._result_pub = None
@@ -117,9 +168,79 @@ class FaceRecognitionNode(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     # ------------------------------------------------------------------
+    # Target selection callback
+
+    def _on_target_selected(self, msg: String) -> None:
+        target_name = str(msg.data).strip()
+        if not target_name:
+            self._log.warn('FaceRecognitionNode: received empty target name.')
+            return
+
+        if self._recognizer is None:
+            self._log.warn('FaceRecognitionNode: recognizer is not ready yet.')
+            return
+
+        if target_name == self._current_target_name:
+            return
+
+        try:
+            target_path = self._resolve_target_path(target_name)
+        except Exception as exc:
+            self._log.err(f'FaceRecognitionNode: invalid target "{target_name}": {exc}')
+            return
+
+        try:
+            with self._recognizer_lock:
+                self._recognizer.load(target_path)
+            self._confirm_counter = 0
+            self._current_target_name = os.path.splitext(os.path.basename(target_path))[0]
+            self._log.succ(
+                f'FaceRecognitionNode: target updated to {self._current_target_name} ({target_path})'
+            )
+        except Exception as exc:
+            self._log.err(f'FaceRecognitionNode: failed to load target "{target_name}": {exc}')
+
+    def _resolve_target_path(self, target_name: str) -> str:
+        if not self._targets_dir or not os.path.isdir(self._targets_dir):
+            raise RuntimeError(f'targets directory not found: {self._targets_dir}')
+
+        base_name, given_ext = os.path.splitext(target_name)
+        candidate_names = []
+
+        if given_ext:
+            candidate_names.append(target_name)
+        else:
+            for ext in _SUPPORTED_TARGET_EXTS:
+                candidate_names.append(f'{target_name}{ext}')
+
+        lowered = {name.lower() for name in candidate_names}
+        for entry in os.listdir(self._targets_dir):
+            path = os.path.join(self._targets_dir, entry)
+            if not os.path.isfile(path):
+                continue
+
+            entry_stem, entry_ext = os.path.splitext(entry)
+            if entry_ext.lower() not in _SUPPORTED_TARGET_EXTS:
+                continue
+
+            if entry.lower() in lowered:
+                return path
+
+            if not given_ext and entry_stem.lower() == target_name.lower():
+                return path
+
+        tried = ', '.join(candidate_names)
+        raise FileNotFoundError(f'no target image found for "{target_name}" (tried: {tried})')
+
+    # ------------------------------------------------------------------
     # Frame callback
 
     def _on_frame(self, msg: Image) -> None:
+        with self._recognizer_lock:
+            recognizer = self._recognizer
+        if recognizer is None:
+            return  # model still loading in the background, or configure failed
+
         try:
             raw = self._bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as exc:
@@ -127,7 +248,8 @@ class FaceRecognitionNode(LifecycleNode):
             return
 
         try:
-            annotated, is_detected, score = self._recognizer.detect(raw)
+            with self._recognizer_lock:
+                annotated, is_detected, score = recognizer.detect(raw)
         except Exception as exc:
             self._log.err(f'FaceRecognitionNode: detect() failed: {exc}')
             return

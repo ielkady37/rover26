@@ -6,6 +6,7 @@ import time
 
 from interfaces.msg import ActuatorCommand
 from interfaces.msg import EulerAngles
+from std_msgs.msg import Bool
 from control.services.Navigation import Navigation
 from control.services.PID import PIDController
 from control.services.Joystick import CJoystick
@@ -26,6 +27,7 @@ class ManualNavigationNode(LifecycleNode):
         self._pid_heading_locked = False
         self.imu_initialized = False  
         self.max_pwm = 255  # Dynamic fallback bound
+        self.kill_active = False
         
         # Debug Counter to prevent terminal flooding
         self.debug_counter = 0
@@ -72,6 +74,7 @@ class ManualNavigationNode(LifecycleNode):
 
             euler_qos = QoSProfile(history=HistoryPolicy.KEEP_LAST, depth=10, reliability=ReliabilityPolicy.BEST_EFFORT)
             self.euler_sub = self.create_subscription(EulerAngles, '/euler', self.euler_callback, euler_qos)
+            self.kill_sub = self.create_subscription(Bool, '/kill', self.kill_callback, 10)
 
             # Setup Timer
             timer_period = 1.0 / loop_rate
@@ -105,6 +108,7 @@ class ManualNavigationNode(LifecycleNode):
         self._log.info("Cleaning up resources...")
         self.destroy_timer(self.control_timer)
         self.destroy_subscription(self.euler_sub)
+        self.destroy_subscription(self.kill_sub)
         self.destroy_publisher(self.motor_pub)
         return TransitionCallbackReturn.SUCCESS
 
@@ -123,8 +127,27 @@ class ManualNavigationNode(LifecycleNode):
         except Exception as e:
             self._log.err(f"Error processing /euler callback: {e}")
 
+    def kill_callback(self, msg: Bool):
+        try:
+            requested = bool(msg.data)
+            if requested == self.kill_active:
+                return
+            self.kill_active = requested
+            if self.kill_active:
+                self._pid_heading_locked = False
+                self.publish_safe_stop()
+                self._log.warn("Kill switch active: publishing safe stop.")
+            else:
+                self._log.info("Kill switch released.")
+        except Exception as e:
+            self._log.err(f"Error processing /kill callback: {e}")
+
     def control_loop_callback(self):
         try:
+            if self.kill_active:
+                self.publish_safe_stop()
+                return
+
             current_time = time.time()
             dt = current_time - self.last_time
             self.last_time = current_time
@@ -198,13 +221,13 @@ class ManualNavigationNode(LifecycleNode):
 
             # Populate outbound Actuator message
             msg = ActuatorCommand()
-            msg.m1_speed = float(abs(cmd_dto.right_pwm))
+            msg.m1_speed = float(abs(cmd_dto.right_pwm)) * 2
             msg.m1_dir = int(cmd_dto.right_dir)
             msg.m1_brake = int(cmd_dto.right_brake)
-            msg.m2_speed = float(abs(cmd_dto.left_pwm))
+            msg.m2_speed = float(abs(cmd_dto.left_pwm)) * 2
             msg.m2_dir = int(cmd_dto.left_dir)
             msg.m2_brake = int(cmd_dto.left_brake)
-            msg.flash = 1  # steady on in manual mode
+            msg.flash = int(0)
 
             # Override direction bits if speed mapping changed polarity
             if cmd_dto.right_pwm < 0: msg.m1_dir = 1 if msg.m1_dir == 0 else 0
@@ -223,7 +246,7 @@ class ManualNavigationNode(LifecycleNode):
             msg.m2_brake = 1
             msg.m1_speed = 0.0
             msg.m2_speed = 0.0
-            msg.flash = 1  # steady on in manual mode
+            msg.flash = int(0)
             self.motor_pub.publish(msg)
 
             if hasattr(self, 'navigation_service'):
