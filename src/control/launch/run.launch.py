@@ -1,8 +1,71 @@
+import subprocess
+import time
+
 from launch import LaunchDescription
+from launch.actions import RegisterEventHandler, LogInfo, OpaqueFunction
+from launch.event_handlers import OnShutdown
 from launch_ros.actions import Node
 import xacro
 import os
 from ament_index_python.packages import get_package_share_directory
+
+# Ports the camera streaming nodes bind to — extend this list if you add
+# more camera streams / ports in cameras.yaml.
+_CAMERA_PORTS = [8081, 8082, 8083]
+
+# Process name patterns that are known to leave orphaned children behind
+# (ManualCameraStreamer forks a daemon multiprocessing.Process per camera
+# that survives a SIGKILL of the parent node — see the debugging session
+# that led to this).
+_ORPHAN_PATTERNS = [
+    "manual_camera_streaming_node",
+    "autonomous_camera_streaming_node",
+]
+
+
+def _kill_orphans():
+    """Force-kill any leftover camera streaming processes from a previous
+    session that didn't shut down cleanly (e.g. the launch was SIGKILL'd
+    before ManualCameraStreamer's graceful stopAllStreams() could finish,
+    orphaning its forked multiprocessing.Process children)."""
+    for pattern in _ORPHAN_PATTERNS:
+        subprocess.run(["pkill", "-9", "-f", pattern], check=False)
+    # Give the OS a moment to actually release the ports/devices before
+    # anything tries to rebind them.
+    time.sleep(1.0)
+
+
+def _report_still_bound_ports():
+    """Best-effort check so a stuck port shows up as a clear warning in the
+    launch log instead of a confusing 'Address already in use' loop 5
+    minutes into a run."""
+    lines = []
+    try:
+        result = subprocess.run(
+            ["ss", "-tlnp"], capture_output=True, text=True, check=False
+        )
+        for port in _CAMERA_PORTS:
+            for line in result.stdout.splitlines():
+                if f":{port} " in line:
+                    lines.append(f"  port {port} still bound: {line.strip()}")
+    except FileNotFoundError:
+        pass  # ss not available — skip the check rather than fail launch
+    return lines
+
+
+def _pre_launch_cleanup(context, *args, **kwargs):
+    _kill_orphans()
+    stuck = _report_still_bound_ports()
+    actions = [LogInfo(msg="Pre-launch cleanup: killed any orphaned camera streaming processes.")]
+    if stuck:
+        actions.append(LogInfo(msg="WARNING: camera ports still bound after cleanup:\n" + "\n".join(stuck)))
+    return actions
+
+
+def _shutdown_cleanup(event, context):
+    _kill_orphans()
+    return [LogInfo(msg="Shutdown cleanup: killed any camera streaming processes left behind.")]
+
 
 def generate_launch_description():
 
@@ -62,8 +125,8 @@ def generate_launch_description():
         name="esp_bridge_node",
         parameters=[{
             'base_frame': 'base_footprint',
-            'sensor_port': '/dev/rover_esp_sensor',
-            'actuator_port': '/dev/ttyUSB3',
+            'sensor_port': '/dev/ttyUSB3',
+            'actuator_port': '/dev/ttyUSB0',
         }]
     )
 
@@ -189,7 +252,21 @@ def generate_launch_description():
         name="face_recognition_node"
     )
 
+    # Runs synchronously while the launch description is being built, i.e.
+    # strictly before any of the Node actions below are started — kills
+    # any orphaned camera streaming processes/ports from a previous session
+    # that didn't shut down cleanly.
+    pre_launch_cleanup = OpaqueFunction(function=_pre_launch_cleanup)
+
+    # Mirrors the same cleanup on the way out, so a Ctrl-C here doesn't
+    # leave the next launch to deal with the mess either.
+    shutdown_cleanup = RegisterEventHandler(
+        OnShutdown(on_shutdown=_shutdown_cleanup)
+    )
+
     return LaunchDescription([
+        pre_launch_cleanup,
+        shutdown_cleanup,
         robot_state_publisher_node,
         joint_state_publisher_node,
         odom_publisher_node,

@@ -34,6 +34,11 @@ class AutonomousNavigationNode(LifecycleNode):
         self._last_heading_pid_time = time.time()
         self.max_heading_correction = 0.3  # rad/s, overwritten from YAML in on_configure
         self._straight_threshold = 0.05    # rad/s — below this, Nav2 is considered "going straight"
+        self._is_active = False
+
+    def _blink_state(self) -> int:
+        """Wall-clock-based on/off toggle (1 Hz) — flashes rather than staying lit."""
+        return int((time.time() * 2) % 2)
 
     def on_configure(self, state: LifecycleState) -> TransitionCallbackReturn:
         self._log.info("Configuring AutonomousNavigationNode...")
@@ -194,7 +199,7 @@ class AutonomousNavigationNode(LifecycleNode):
             act_msg.m1_speed = 4.0 * float(cmd_dto.right_pwm)
             act_msg.m1_dir   = int(cmd_dto.right_dir)
             act_msg.m1_brake = int(cmd_dto.right_brake)
-            act_msg.flash    = int(1)
+            act_msg.flash    = self._blink_state()
             act_msg.laser    = int(0)
             act_msg.servo    = float(0.0)
 
@@ -233,7 +238,7 @@ class AutonomousNavigationNode(LifecycleNode):
             msg.m2_speed = float(0.0)
             msg.m2_dir   = int(0)
             msg.m2_brake = int(1)
-            msg.flash    = int(1)
+            msg.flash    = self._blink_state()
             msg.laser    = int(0)
             msg.servo    = float(0.0)
             self.motor_pub.publish(msg)
