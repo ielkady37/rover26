@@ -62,7 +62,7 @@ class HoverBoardNode(Node):
 
         self.declare_parameter("uart_port",   "")
         self.declare_parameter("baudrate",    115200)
-        self.declare_parameter("max_speed",   500)
+        self.declare_parameter("max_speed",   400)
         self.declare_parameter("base_frame",  "base_link")
         self.declare_parameter("read_hz",     100)      # how often to poll serial RX
         self.declare_parameter("send_hz",     10)       # heartbeat send rate — must stay
