@@ -1,5 +1,5 @@
 fisheye_camera:
-  index: /home/seelie/Videos/Screencasts/croppedLane.mp4
+  index: /home/seelie/Videos/Screencasts/croppedLane.mp4 
   width: 1280
   height: 720
   fps: 30
