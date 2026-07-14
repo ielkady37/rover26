@@ -22,3 +22,11 @@ poly_degree: 2
 #   this ratio (a real lane line is predominantly vertical in the image).
 min_y_spread_frac: 0.15
 max_horizontal_ratio: 5.0
+
+# Minimum spacing (px) enforced between consecutive drawn lane points, so
+# the overlay never jitters between adjacent rows of the same contour.
+point_spacing_px: 8
+
+# Fraction of the frame height, from the top, dropped before any lane-line
+# contour is considered there — sky/horizon/buildings, not road.
+ignore_top_frac: 0.33

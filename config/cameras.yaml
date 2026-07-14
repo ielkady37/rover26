@@ -1,5 +1,5 @@
 fisheye_camera:
-  index: /dev/Fisheye 
+  index: /home/seelie/Videos/Screencasts/croppedLane.mp4
   width: 1280
   height: 720
   fps: 30
@@ -7,7 +7,7 @@ fisheye_camera:
   format: MJPG
   calibration: /calibration/fisheye_calibration.npz
   calibration_type: fisheye
-  fisheye_balance: 1.0
+  fisheye_balance: 1.0    
   fisheye_fov_scale: 1.0
   is_stereo: False
 # camera2:

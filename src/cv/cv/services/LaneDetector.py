@@ -56,6 +56,18 @@ class LaneDetector:
         self._min_y_spread_frac = float(ld_config.get('min_y_spread_frac', 0.15))
         self._max_horizontal_ratio = float(ld_config.get('max_horizontal_ratio', 5.0))
 
+        # Spacing (px, Euclidean) enforced between consecutive drawn points
+        # so the overlay never jumps — every point is the real row-wise
+        # center of the chosen lane blob, resampled to this step.
+        self._point_spacing_px = int(ld_config.get('point_spacing_px', 8))
+
+        # Fraction of the frame height, from the top, to drop before any
+        # lane-line contour is considered — the top third is sky/horizon/
+        # buildings, not road, and every "picked the far/wrong line" bug so
+        # far has come from something up there (the horizon border, a
+        # building edge) surviving into the candidate pool.
+        self._ignore_top_frac = float(ld_config.get('ignore_top_frac', 0.33))
+
         self._width = int(camera_config.get('width', 640))
         self._height = int(camera_config.get('height', 480))
         self._balance = float(ld_config.get('balance', 0.0))
@@ -195,24 +207,29 @@ class LaneDetector:
                     self._lane_ema = (1.0 - alpha) * self._lane_ema + alpha * ll_seg_mask.astype(np.float32)
                 ll_seg_mask = (self._lane_ema >= self._lane_ema_thresh).astype(np.uint8)
 
-            # --- Split left / right by the drivable-area's own row-wise
-            # center, instead of a fixed frame column. A fixed mid assumes
-            # the road stays centered in the image; it silently misassigns
-            # pixels to the wrong side once the road curves or the camera
-            # is tilted/rolled relative to the ground. ---
+            # --- Drop the top slice of the frame (sky/horizon/buildings)
+            # before any contour is found there. Every "picked the wrong,
+            # far-off line" bug so far traced back to something up there
+            # (horizon border, a building edge) surviving into the
+            # candidate pool — cheaper and more reliable to remove it than
+            # to keep out-arguing it in the ranking logic. ---
+            ignore_rows = int(h_frame * self._ignore_top_frac)
+            if ignore_rows > 0:
+                ll_seg_mask[:ignore_rows, :] = 0
+
+            # Adaptive per-row center column, from the drivable-area mask's
+            # own extent (rather than a fixed w_frame // 2), so it follows
+            # the road as it curves or the camera tilts/rolls.
             mid_col = self._adaptive_midline(da_seg_mask, w_frame)
-            col_idx = np.arange(w_frame)[np.newaxis, :]
             lane_bool = ll_seg_mask == 1
-            left_mask = lane_bool & (col_idx < mid_col[:, np.newaxis])
-            right_mask = lane_bool & (col_idx >= mid_col[:, np.newaxis])
 
-            left_coeffs, left_span = self._fit_lane(left_mask, side='LEFT ' if diag else None)
-            right_coeffs, right_span = self._fit_lane(right_mask, side='RIGHT' if diag else None)
+            left_coeffs, left_points, right_coeffs, right_points = self._fit_lanes(
+                lane_bool, mid_col, diag
+            )
 
-            # [DIAG] per-frame summary: mask pixel budget per side + fit outcome
+            # [DIAG] per-frame summary: mask pixel budget + fit outcome
             if diag:
-                left_px = int(left_mask.sum())
-                right_px = int(right_mask.sum())
+                lane_px = int(lane_bool.sum())
                 da_px = int(da_seg_mask.sum())
 
                 def fmt(coeffs):
@@ -222,17 +239,18 @@ class LaneDetector:
 
                 # self._log.info(
                 #     f'[DIAG] frame#{self._diag_frame} {w_frame}x{h_frame}  '
-                #     f'lane_px L={left_px} R={right_px}  drivable_px={da_px}  '
+                #     f'lane_px={lane_px}  drivable_px={da_px}  '
                 #     f'L={fmt(left_coeffs)}  R={fmt(right_coeffs)}'
                 # )
 
             # --- Annotate ---
             YOLOUtils.show_seg_result(im0, (da_seg_mask, ll_seg_mask), is_demo=True)
 
-            # Fitted polynomials (what the goal publisher actually receives),
-            # drawn over their fitted y-range: LEFT = blue, RIGHT = red.
-            self._draw_lane_fit(im0, left_coeffs, left_span, (255, 80, 0))
-            self._draw_lane_fit(im0, right_coeffs, right_span, (0, 0, 255))
+            # Drawn from the actual selected lane blob's own pixels (never
+            # from the fitted polynomial), so every point sits on a
+            # detected contour: LEFT = blue, RIGHT = red.
+            self._draw_lane_points(im0, left_points, (255, 80, 0))
+            self._draw_lane_points(im0, right_points, (0, 0, 255))
             for det in pred:
                 if len(det):
                     det[:, :4] = CVUtilities.scale_coords(
@@ -255,62 +273,115 @@ class LaneDetector:
     # ------------------------------------------------------------------
     # Internal
 
-    def _fit_lane(self, mask: np.ndarray, side: str | None = None):
-        """Fit a polynomial to lit pixels in *mask*.
+    def _fit_lanes(self, lane_bool: np.ndarray, mid_col: np.ndarray, diag: bool):
+        """Pick the nearest-to-center lane contour on each side, fit and trace it.
+
+        Contours are found on the *whole* mask, not a mask already split
+        into "left"/"right" by column: splitting first cuts any blob that
+        straddles that column — a fork's median edge, a curving lane
+        crossing it mid-turn — into fragments that then get stitched onto
+        whichever side grabbed each piece, producing a line that hooks or
+        bends where it shouldn't. Each whole contour is classified left or
+        right afterwards by the sign of its own real pixels' ``x - mid_col``
+        (majority vote), then ranked by proximity to center at its own
+        bottom-most rows, the same as before.
 
         Parameters
         ----------
-        mask:
-            Boolean/binary 2-D array (H × W) in full-frame coordinates,
-            already restricted to one side of the adaptive midline.
+        lane_bool:
+            Boolean 2-D array (H × W) of the full lane-line mask.
+        mid_col:
+            Per-row center column (shape ``(H,)``).
+        diag:
+            [DIAG] Whether to log fit rejections/outcomes this frame.
+
+        Returns
+        -------
+        tuple[list[float], np.ndarray, list[float], np.ndarray]
+            ``(left_coeffs, left_points, right_coeffs, right_points)``.
+        """
+        min_pts = max(self._poly_degree + 1, 10)
+        min_y_spread = self._min_y_spread_frac * lane_bool.shape[0]
+
+        num_labels, labels = cv2.connectedComponents(lane_bool.astype(np.uint8), connectivity=8)
+
+        left_candidates = []
+        right_candidates = []
+        for lbl in range(1, num_labels):
+            ys, xs = np.where(labels == lbl)
+            if len(ys) < min_pts:
+                continue
+
+            y_spread = float(np.ptp(ys))
+            x_spread = float(np.ptp(xs))
+            if y_spread < min_y_spread:
+                continue
+
+            ratio = x_spread / max(y_spread, 1.0)
+            if ratio > self._max_horizontal_ratio:
+                continue
+
+            is_left = float(np.median(xs - mid_col[ys])) < 0.0
+            (left_candidates if is_left else right_candidates).append((ys, xs))
+
+        left_coeffs, left_points = self._pick_nearest(
+            left_candidates, mid_col, side='LEFT ' if diag else None
+        )
+        right_coeffs, right_points = self._pick_nearest(
+            right_candidates, mid_col, side='RIGHT' if diag else None
+        )
+        return left_coeffs, left_points, right_coeffs, right_points
+
+    def _pick_nearest(self, candidates: list, mid_col: np.ndarray, side: str | None = None):
+        """Pick the candidate contour nearest to center, fit and trace it.
+
+        Parameters
+        ----------
+        candidates:
+            List of ``(ys, xs)`` pixel-coordinate pairs, one per contour
+            already classified onto this side.
+        mid_col:
+            Per-row center column (shape ``(H,)``), used to rank contours.
         side:
             [DIAG] Side label ('LEFT '/'RIGHT') to log fit outcome under,
             or None to stay silent (used to throttle logging per frame).
 
         Returns
         -------
-        tuple[list[float], tuple[int, int] | None]
-            ``(coeffs, (y_min, y_max))`` — polynomial coefficients
-            ``[a, b, ..., c]`` of degree ``self._poly_degree`` for
-            ``x = f(y)`` plus the fitted y-range, or ``([], None)`` when
-            the blob was rejected.
+        tuple[list[float], np.ndarray]
+            ``(coeffs, points)`` — polynomial coefficients ``[a, b, ..., c]``
+            of degree ``self._poly_degree`` for ``x = f(y)`` fitted to the
+            selected contour, and an ``(N, 2)`` int array of ``(x, y)``
+            points sampled directly off that contour's own pixels for
+            drawing. Either or both are empty when no contour qualifies.
         """
-        ys, xs = np.where(mask)
-        # Require enough points and sufficient vertical spread for a stable fit
-        min_pts = max(self._poly_degree + 1, 10)
-        if len(ys) < min_pts:
+        if not candidates:
             # if side:
-                # self._log.warn(
-                #     f'[DIAG:fit] {side} REJECT — only {len(ys)} lane px '
-                #     f'(need ≥{min_pts})'
-                # )
-            return [], None
+            #     self._log.warn(f'[DIAG:fit] {side} REJECT — no contour passed the shape gates')
+            return [], np.empty((0, 2), dtype=np.int32)
 
-        y_spread = float(np.ptp(ys))
-        x_spread = float(np.ptp(xs))
+        best = None
+        best_dist = None
+        for ys, xs in candidates:
+            # Rank by proximity to center at this blob's own bottom-most
+            # rows (closest to the vehicle), not anywhere along its length.
+            # Near the horizon every contour converges toward the vanishing
+            # point, so a farther-out lane can look deceptively close to
+            # center up there even though it sits well outside the near
+            # lane lower in the frame — comparing at the bottom is the only
+            # place perspective doesn't lie about which one is adjacent.
+            y_spread = float(np.ptp(ys))
+            bottom_n = max(1, int(0.2 * (y_spread + 1)))
+            bottom_thresh = ys.max() - bottom_n + 1
+            bottom_sel = ys >= bottom_thresh
+            dist = float(np.mean(np.abs(xs[bottom_sel] - mid_col[ys[bottom_sel]])))
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best = (ys, xs)
 
-        # A lane line must span a real vertical stretch of the image.
-        min_y_spread = self._min_y_spread_frac * mask.shape[0]
-        if y_spread < min_y_spread:
-            # if side:
-            #     self._log.warn(
-            #         f'[DIAG:fit] {side} REJECT — y-spread {int(y_spread)}px '
-            #         f'< {int(min_y_spread)}px ({self._min_y_spread_frac:.2f} of '
-            #         f'{mask.shape[0]} rows) — horizontal blob, not a lane line'
-            #     )
-            return [], None
+        ys, xs = best
+        points = self._contour_points(ys, xs, self._point_spacing_px)
 
-        # Near-horizontal features fit x=f(y) with insane curvature.
-        ratio = x_spread / max(y_spread, 1.0)
-        if ratio > self._max_horizontal_ratio:
-            # if side:
-            #     self._log.warn(
-            #         f'[DIAG:fit] {side} REJECT — x/y extent ratio {ratio:.1f} '
-            #         f'> {self._max_horizontal_ratio:.1f} '
-            #         f'(x_spread={int(x_spread)}px y_spread={int(y_spread)}px) '
-            #         f'— feature is near-horizontal'
-            #     )
-            return [], None
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', np.RankWarning)
@@ -322,11 +393,49 @@ class LaneDetector:
             #         f'x=[{int(xs.min())}..{int(xs.max())}]  '
             #         f'coeffs=[{" ".join(f"{c:+.4e}" for c in coeffs)}]'
             #     )
-            return coeffs.tolist(), (int(ys.min()), int(ys.max()))
+            return coeffs.tolist(), points
         except (np.linalg.LinAlgError, ValueError) as exc:
             if side:
                 self._log.warn(f'[DIAG:fit] {side} REJECT — polyfit failed: {exc}')
-            return [], None
+            return [], points
+
+    @staticmethod
+    def _contour_points(ys: np.ndarray, xs: np.ndarray, min_step: int) -> np.ndarray:
+        """Row-wise centerline of one blob, resampled to ~``min_step`` spacing.
+
+        Every output point is the mean x of that blob's own pixels on one
+        row — i.e. it sits on the detected lane contour itself, never on an
+        extrapolated curve. Consecutive rows are then merged until they are
+        at least ``min_step`` px apart (Euclidean) so the drawn line has no
+        noisy micro-jitter between neighbouring rows.
+        """
+        order = np.argsort(ys, kind='stable')
+        ys_sorted = ys[order]
+        xs_sorted = xs[order].astype(np.float64)
+
+        uniq_y, start_idx, counts = np.unique(ys_sorted, return_index=True, return_counts=True)
+        sums = np.add.reduceat(xs_sorted, start_idx)
+        row_x = sums / counts
+
+        if len(uniq_y) < 2:
+            return np.empty((0, 2), dtype=np.int32)
+
+        kept_y = [int(uniq_y[0])]
+        kept_x = [float(row_x[0])]
+        min_step_sq = float(min_step) ** 2
+        for y, x in zip(uniq_y[1:], row_x[1:]):
+            dy = float(y) - kept_y[-1]
+            dx = float(x) - kept_x[-1]
+            if dy * dy + dx * dx >= min_step_sq:
+                kept_y.append(int(y))
+                kept_x.append(float(x))
+
+        last_y, last_x = int(uniq_y[-1]), float(row_x[-1])
+        if kept_y[-1] != last_y:
+            kept_y.append(last_y)
+            kept_x.append(last_x)
+
+        return np.column_stack([kept_x, kept_y]).astype(np.int32)
 
     @staticmethod
     def _adaptive_midline(da_seg_mask: np.ndarray, w_frame: int) -> np.ndarray:
@@ -364,18 +473,11 @@ class LaneDetector:
         return mid_col
 
     @staticmethod
-    def _draw_lane_fit(frame: np.ndarray, coeffs, span, color) -> None:
-        """Draw a fitted lane polynomial x = f(y) over its fitted y-range."""
-        if not coeffs or span is None:
+    def _draw_lane_points(frame: np.ndarray, points: np.ndarray, color) -> None:
+        """Draw a lane as a polyline through points sampled off its own contour."""
+        if points is None or len(points) < 2:
             return
-        ys = np.arange(int(span[0]), int(span[1]) + 1, 4)
-        if ys.size < 2:
-            return
-        xs = np.polyval(coeffs, ys)
-        keep = (xs >= 0) & (xs < frame.shape[1])
-        pts = np.column_stack([xs[keep], ys[keep]]).astype(np.int32)
-        if len(pts) >= 2:
-            cv2.polylines(frame, [pts], False, color, 3)
+        cv2.polylines(frame, [points], False, color, 3)
 
     @staticmethod
     def _resolve_path(path: str, root: str) -> str:
