@@ -5,35 +5,10 @@ lane_goal_publisher.py  —  rover26_autonomy
 Converts lane polynomial coefficients from lane_detection into a stream of
 Nav2 NavigateToPose goals so the rover follows the lane.
 
-CURVATURE MODEL
-───────────────
-The old build used `abs(centre_poly[0])` (the quadratic 'a' coefficient) as its
-curvature proxy. On a perspective frame that metric is degenerate: in a hard
-turn the lane runs near-horizontal in the image, so the x = f(y) fit gets
-FLATTER, not steeper. Field logs from a real 90° curve showed |a| = 8.1e-4
-against a SHARP_THRESHOLD of 7.0e-3 — blend never exceeded 0.12, the sharp-turn
-behaviour was unreachable, and the rover drove a 4.5 m goal straight through
-the corner.
-
-This version measures the lane's BEND ANGLE in ground metres instead:
-
-    anchor = lane centre at row PY_ANCHOR * IMG_H   (just in front of rover)
-    probe  = lane centre at row PY_FAR    * IMG_H   (far look-ahead)
-    bend   = atan2(Δy, Δx)                          (signed radians)
-    blend  = min(1, |bend| / SHARP_ANGLE_RAD)       (0 = straight, 1 = sharp)
-
-`blend` continuously drives look-ahead distance, goal spacing, lateral
-smoothing, goal heading, and whether a new goal preempts the active one.
-
-Two further fixes vs the old build:
-
-  * GOAL HEADING now follows the LANE TANGENT at the goal, not just the
-    line-of-sight from the rover to the goal. The old atan2(y_lat, x_fwd) form
-    could never deflect more than a few degrees (logs: +4.1° through a 90° bend).
-
-  * GOAL PREEMPTION: in a curve the node cancels a stale in-flight goal instead
-    of waiting for it to complete. Previously `if was_nav_active: return` froze
-    the rover on a 3 m-old goal for the entire corner.
+Goal computation is a single continuous formula: curvature (from the fused
+centre-lane polynomial) blends the look-ahead distance, goal-update spacing,
+and lateral smoothing between "straight" and "sharp" behaviour — there's no
+separate discrete mode switch.
 
 If both lane sides are lost, the rover cancels its current goal and spins in
 place to search for the lane again.
@@ -114,8 +89,8 @@ class LaneGoalPublisher(Node):
 
         self.get_logger().info(
             'lane_goal_publisher started  '
-            f'(sharp_angle={math.degrees(Cfg.SHARP_ANGLE_RAD):.1f}°  '
-            f'look-ahead rows {Cfg.PY_FAR}..{Cfg.PY_SHARP}  '
+            f'(curve_thr={Cfg.SHARP_THRESHOLD:.4f}  '
+            f'look-ahead {Cfg.PY_FAR}..{Cfg.PY_SHARP}  '
             f'update {Cfg.UPDATE_M_STRAIGHT}..{Cfg.UPDATE_M_SHARP} m)'
         )
 
@@ -211,35 +186,6 @@ class LaneGoalPublisher(Node):
         self._marker_id = (self._marker_id + 1) % Cfg.MAX_MARKERS
 
     # =========================================================================
-    #  LANE GEOMETRY HELPER
-    # =========================================================================
-
-    @staticmethod
-    def _ground_at(py, left_c: np.ndarray, right_c: np.ndarray, centre_c: np.ndarray):
-        """
-        Ground position (x_fwd, y_lat) of the lane CENTRE at image row `py`,
-        in metres, in the rover's body frame (x forward, y left).
-
-        Returns None if the fitted lanes are invalid at that row (centre pixel
-        off-image, or lane width collapsed/inverted — both mean the polynomial
-        is being extrapolated outside the pixels it was actually fitted on).
-        """
-        py = int(np.clip(py, 0, IMG_H - 1))
-
-        centre_px = float(np.polyval(centre_c, py))
-        if not (0.0 <= centre_px < IMG_W):
-            return None
-
-        lane_width_px = float(np.polyval(right_c, py) - np.polyval(left_c, py))
-        if lane_width_px < Cfg.MIN_LANE_WIDTH_PX:
-            return None
-
-        metres_per_px = Physical.LANE_WIDTH_M / lane_width_px
-        x_fwd = (1.0 - py / IMG_H) * Physical.GROUND_HEIGHT_M * 0.92
-        y_lat = (IMG_W / 2.0 - centre_px) * metres_per_px
-        return x_fwd, y_lat
-
-    # =========================================================================
     #  MAIN CALLBACK — runs on every /lane_detection message
     # =========================================================================
 
@@ -275,32 +221,16 @@ class LaneGoalPublisher(Node):
             self._try_rotation_recovery()
             return
 
-        # ── Lane polynomials ─────────────────────────────────────────────────
+        # ── Lane geometry ────────────────────────────────────────────────────
         left_c   = np.array(msg.left_lane_coeffs,  dtype=float)
         right_c  = np.array(msg.right_lane_coeffs, dtype=float)
         centre_c = (left_c + right_c) / 2.0
 
-        def ground(py):
-            return self._ground_at(py, left_c, right_c, centre_c)
-
-        # ── Curvature = lane bend angle over the look-ahead window ───────────
-        # This is the metric that replaces abs(centre_c[0]). It is measured in
-        # ground metres between a near anchor row and the far probe row, so it
-        # saturates properly in a 90° turn instead of collapsing to noise.
-        p_anchor = ground(IMG_H * Cfg.PY_ANCHOR)
-        p_probe  = ground(IMG_H * Cfg.PY_FAR)
-        if p_anchor is None or p_probe is None:
-            self.get_logger().warn(
-                '[lane] REJECT — invalid geometry at anchor/probe row',
-                throttle_duration_sec=1.0,
-            )
-            return
-
-        d_fwd      = max(0.10, p_probe[0] - p_anchor[0])
-        d_lat      = p_probe[1] - p_anchor[1]
-        lane_angle = math.atan2(d_lat, d_fwd)              # signed radians
-        blend      = min(1.0, abs(lane_angle) / Cfg.SHARP_ANGLE_RAD) \
-            if Cfg.SHARP_ANGLE_RAD > 0 else 0.0
+        curvature = abs(centre_c[0])
+        # 0 = straight, 1 = at/above the sharp-turn threshold. One continuous
+        # blend drives look-ahead distance, update spacing, and smoothing —
+        # no separate discrete mode.
+        blend = min(1.0, curvature / Cfg.SHARP_THRESHOLD) if Cfg.SHARP_THRESHOLD > 0 else 0.0
 
         # ── Rover pose ───────────────────────────────────────────────────────
         q         = self.current_odom.orientation
@@ -308,36 +238,34 @@ class LaneGoalPublisher(Node):
         rover_x   = self.current_odom.position.x
         rover_y   = self.current_odom.position.y
 
-        # ── Adaptive look-ahead row: pull the goal IN as the bend tightens ───
+        # ── Adaptive look-ahead row ──────────────────────────────────────────
         py_frac = Cfg.PY_FAR + blend * (Cfg.PY_SHARP - Cfg.PY_FAR)
         py      = int(np.clip(IMG_H * py_frac, 0, IMG_H - 1))
 
-        p_goal = ground(py)
-        if p_goal is None:
+        centre_px = np.polyval(centre_c, py)
+        if not (0 <= centre_px < IMG_W):
             self.get_logger().warn(
-                f'[lane] REJECT — invalid geometry at py={py}',
+                f'[lane] REJECT — centre_px={centre_px:.1f} off-image at py={py}',
                 throttle_duration_sec=1.0,
             )
             return
 
-        x_fwd, y_lat = p_goal
-        y_lat += Physical.LATERAL_BIAS_M
-
-        # ── Lane TANGENT at the goal row (the term the old build never had) ──
-        # Sampling a row above (py - N) and below (py + N) the goal gives the
-        # direction the lane is actually running THERE, which is what the goal
-        # pose's heading should be in a turn.
-        p_above = ground(py - Cfg.TANGENT_ROWS)   # further ahead on the ground
-        p_below = ground(py + Cfg.TANGENT_ROWS)   # nearer the rover
-        if p_above is not None and p_below is not None:
-            goal_tangent = math.atan2(
-                p_above[1] - p_below[1],
-                max(0.05, p_above[0] - p_below[0]),
+        left_px_look  = np.polyval(left_c,  py)
+        right_px_look = np.polyval(right_c, py)
+        lane_width_px = right_px_look - left_px_look
+        if lane_width_px < 10:
+            self.get_logger().warn(
+                f'[lane] REJECT — lane_width_px={lane_width_px:.1f} < 10 at py={py}',
+                throttle_duration_sec=1.0,
             )
-        else:
-            goal_tangent = lane_angle   # fall back to the window-wide bend
+            return
 
-        # ── Lateral IIR smoother — heavier on straights, quicker in curves ───
+        x_fwd         = (1.0 - py / IMG_H) * Physical.GROUND_HEIGHT_M * 0.92
+        offset_px     = IMG_W / 2.0 - centre_px
+        metres_per_px = Physical.LANE_WIDTH_M / lane_width_px
+        y_lat         = offset_px * metres_per_px + Physical.LATERAL_BIAS_M
+
+        # Lateral IIR smoother — heavier on straights, quicker in curves.
         alpha = Cfg.ALPHA_STRAIGHT + blend * (Cfg.ALPHA_CURVE - Cfg.ALPHA_STRAIGHT)
         if self._y_lat_smooth is None:
             self._y_lat_smooth = y_lat
@@ -345,59 +273,31 @@ class LaneGoalPublisher(Node):
             self._y_lat_smooth = alpha * self._y_lat_smooth + (1.0 - alpha) * y_lat
         y_lat_used = self._y_lat_smooth
 
-        # ── Body frame → odom frame ──────────────────────────────────────────
         cos_yaw = math.cos(rover_yaw)
         sin_yaw = math.sin(rover_yaw)
         goal_x  = rover_x + x_fwd * cos_yaw - y_lat_used * sin_yaw
         goal_y  = rover_y + x_fwd * sin_yaw + y_lat_used * cos_yaw
+        goal_yaw = rover_yaw + math.atan2(y_lat_used, x_fwd)
 
-        # ── Goal heading ─────────────────────────────────────────────────────
-        # Straight  (blend→0): aim at the goal point (old behaviour, fine here).
-        # Sharp     (blend→1): align with the lane tangent, so Nav2 is told to
-        #                      arrive POINTING AROUND the corner instead of
-        #                      arriving pointing straight down the old heading.
-        aim      = math.atan2(y_lat_used, max(0.10, x_fwd))
-        goal_yaw = rover_yaw + (1.0 - blend) * aim + blend * goal_tangent
-
-        # ── Goal update spacing ──────────────────────────────────────────────
         min_update = Cfg.UPDATE_M_STRAIGHT + blend * (Cfg.UPDATE_M_SHARP - Cfg.UPDATE_M_STRAIGHT)
-        # Never freeze the goal for longer than a fraction of the look-ahead,
-        # whatever the blend says — this is the backstop against corner-cutting.
-        min_update = min(min_update, x_fwd * Cfg.UPDATE_FRAC_OF_LOOKAHEAD)
 
-        # ── Goal throttle ────────────────────────────────────────────────────
+        # ── Goal throttle: only send if moved far enough and nothing active ──
         if self.last_goal_xy is not None:
             dist = math.hypot(goal_x - self.last_goal_xy[0], goal_y - self.last_goal_xy[1])
             if dist < min_update:
                 return
-
-        # ── Preemption ───────────────────────────────────────────────────────
-        # On a straight, let the in-flight goal run to completion (cheap, avoids
-        # thrashing the planner). In a curve, a goal computed even 1 m ago is
-        # already wrong — throw it away and re-plan from here.
         if was_nav_active:
-            if blend < Cfg.PREEMPT_BLEND:
-                return
-            self._cancel_current_goal()
-            self._nav_active = False
-            self.get_logger().info(
-                f'[nav] preempting stale goal (blend={blend:.2f})',
-                throttle_duration_sec=1.0,
-            )
+            return
 
-        self.last_goal_xy       = (goal_x, goal_y)
+        self.last_goal_xy      = (goal_x, goal_y)
         self._last_valid_time_s = now_s
-
-        # Remember which way the lane was bending, so a recovery spin searches
-        # in the right direction. Driven by the lane bend, not by y_lat.
-        if abs(lane_angle) > 1e-3:
-            self._last_valid_curve_sign = math.copysign(1.0, lane_angle)
+        if abs(y_lat_used) > 1e-3:
+            self._last_valid_curve_sign = math.copysign(1.0, y_lat_used)
 
         self._is_rotating       = False
         self._lane_loss_start_s = None
 
         self._publish_goal_marker(goal_x, goal_y, goal_yaw)
-
         if Cfg.DEBUG_STANDALONE:
             # No Nav2: clear the anchor so every frame recomputes (the rover
             # never moves, so the throttle would otherwise HOLD forever).
@@ -411,8 +311,7 @@ class LaneGoalPublisher(Node):
             self._send_action_goal(goal_x, goal_y, goal_yaw)
 
         self.get_logger().info(
-            f'[goal] bend={math.degrees(lane_angle):+5.1f}° blend={blend:.2f} py={py} '
-            f'x_fwd={x_fwd:.2f} y_lat={y_lat_used:+.2f} upd={min_update:.2f} '
+            f'[goal] curv={curvature:.2e} blend={blend:.2f} py={py} '
             f'goal=({goal_x:.2f},{goal_y:.2f}) hdg={math.degrees(goal_yaw - rover_yaw):+.1f}°'
         )
 
@@ -435,9 +334,7 @@ class LaneGoalPublisher(Node):
         # ── Trigger A: topic silence ─────────────────────────────────────────
         if silence >= Cfg.LANE_SILENCE_THRESH_S:
             if not self._nav_active:
-                self.get_logger().warn(
-                    f'[watchdog] topic silent {silence:.1f}s', throttle_duration_sec=2.0
-                )
+                self.get_logger().warn(f'[watchdog] topic silent {silence:.1f}s', throttle_duration_sec=2.0)
                 self._try_rotation_recovery()
             return
 
@@ -459,7 +356,7 @@ class LaneGoalPublisher(Node):
             return
 
         xy_err = math.hypot(self.current_odom.position.x - self._current_goal_x,
-                            self.current_odom.position.y - self._current_goal_y)
+                             self.current_odom.position.y - self._current_goal_y)
         if xy_err > Cfg.XY_GOAL_TOL:
             return
 
@@ -482,9 +379,9 @@ class LaneGoalPublisher(Node):
     def _try_rotation_recovery(self) -> None:
         """
         Lane-loss recovery: cancel any active goal and spin in place (toward
-        the last known lane-bend direction) until the lane is found again or
+        the last known curve direction) until the lane is found again or
         LANE_LOSS_TIMEOUT_S elapses. Re-triggered by the watchdog every tick
-        the lane stays lost, so it keeps spinning until it works.
+        the lane stays lost, so it naturally keeps spinning until it works.
         """
         if Cfg.DEBUG_STANDALONE or self._is_rotating or self._nav_active or self.current_odom is None:
             return
@@ -530,8 +427,7 @@ class LaneGoalPublisher(Node):
 
                 q           = self.current_odom.orientation
                 current_yaw = 2.0 * math.atan2(q.z, q.w)
-                yaw_delta   = abs(math.atan2(math.sin(current_yaw - start_yaw),
-                                             math.cos(current_yaw - start_yaw)))
+                yaw_delta   = abs(math.atan2(math.sin(current_yaw - start_yaw), math.cos(current_yaw - start_yaw)))
 
                 if yaw_delta >= Cfg.RECOVERY_YAW_TARGET_RAD:
                     self.cmd_vel_pub.publish(stop)
