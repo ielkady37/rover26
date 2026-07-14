@@ -27,6 +27,19 @@ max_horizontal_ratio: 5.0
 # the overlay never jitters between adjacent rows of the same contour.
 point_spacing_px: 8
 
+# Max allowed frame-to-frame jump (px) in a lane's bottom-row x position
+# before the new pick is rejected and the previous frame's fit is reused.
+# Guards against the 1-2 frame glitches where a bad blob briefly wins and
+# the overlay visibly snaps sideways. 0 disables the check.
+# max_lane_jump_reject_streak: after this many consecutive rejections on one
+# side, the gate accepts the new pick anyway (treats it as a real, sustained
+# move — e.g. a curve — rather than a one-frame glitch) instead of freezing
+# the lane in place forever. Tune the two together: a lower max_lane_jump_px
+# catches glitches faster but relies on the streak to release into curves;
+# a higher streak rides out longer through a real turn before giving up.
+max_lane_jump_px: 30
+max_lane_jump_reject_streak: 3
+
 # Fraction of the frame height, from the top, dropped before any lane-line
 # contour is considered there — sky/horizon/buildings, not road.
 ignore_top_frac: 0.33

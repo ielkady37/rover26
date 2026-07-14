@@ -125,8 +125,8 @@ def generate_launch_description():
         name="esp_bridge_node",
         parameters=[{
             'base_frame': 'base_footprint',
-            'sensor_port': '/dev/ttyUSB3',
-            'actuator_port': '/dev/ttyUSB0',
+            'sensor_port': '/dev/rover_esp_sensor',
+            'actuator_port': '/dev/ttyUSB6',
         }]
     )
 

@@ -61,6 +61,20 @@ class LaneDetector:
         # center of the chosen lane blob, resampled to this step.
         self._point_spacing_px = int(ld_config.get('point_spacing_px', 8))
 
+        # Max allowed frame-to-frame jump (px) in a lane's bottom-row x
+        # position before this frame's pick is rejected in favor of the
+        # previous frame's fit. Catches the 1-2 frame glitches where a bad
+        # blob briefly wins the pick and the overlay visibly snaps sideways.
+        # 0 disables the check.
+        self._max_lane_jump_px = float(ld_config.get('max_lane_jump_px', 0.0))
+        # A real curve moves the bottom-row x gradually but can still clear
+        # max_lane_jump_px several frames in a row — without a release valve
+        # the gate would reject forever and freeze the lane mid-turn. After
+        # this many *consecutive* rejections on one side, accept the new
+        # pick unconditionally (treat it as real motion, not a glitch) and
+        # reset the streak.
+        self._max_lane_jump_reject_streak = int(ld_config.get('max_lane_jump_reject_streak', 3))
+
         # Fraction of the frame height, from the top, to drop before any
         # lane-line contour is considered — the top third is sky/horizon/
         # buildings, not road, and every "picked the far/wrong line" bug so
@@ -80,6 +94,14 @@ class LaneDetector:
         self._map2 = None
         self._lane_ema = None
         self._ready = False
+
+        # Last accepted fit per side, as (coeffs, points, bottom_x), used by
+        # the jump-rejection gate in _pick_nearest.
+        self._prev_left_fit = None
+        self._prev_right_fit = None
+        # Consecutive-rejection counters per side (see max_lane_jump_reject_streak).
+        self._left_jump_reject_streak = 0
+        self._right_jump_reject_streak = 0
 
         # [DIAG] state
         self._log = RoverLogger()
@@ -325,14 +347,20 @@ class LaneDetector:
             (left_candidates if is_left else right_candidates).append((ys, xs))
 
         left_coeffs, left_points = self._pick_nearest(
-            left_candidates, mid_col, side='LEFT ' if diag else None
+            left_candidates, mid_col, side_key='left', side='LEFT ' if diag else None
         )
         right_coeffs, right_points = self._pick_nearest(
-            right_candidates, mid_col, side='RIGHT' if diag else None
+            right_candidates, mid_col, side_key='right', side='RIGHT' if diag else None
         )
         return left_coeffs, left_points, right_coeffs, right_points
 
-    def _pick_nearest(self, candidates: list, mid_col: np.ndarray, side: str | None = None):
+    def _pick_nearest(
+        self,
+        candidates: list,
+        mid_col: np.ndarray,
+        side_key: str,
+        side: str | None = None,
+    ):
         """Pick the candidate contour nearest to center, fit and trace it.
 
         Parameters
@@ -342,6 +370,9 @@ class LaneDetector:
             already classified onto this side.
         mid_col:
             Per-row center column (shape ``(H,)``), used to rank contours.
+        side_key:
+            'left' or 'right' — selects which previous-frame fit to compare
+            against for jump rejection, independent of ``side``/diag logging.
         side:
             [DIAG] Side label ('LEFT '/'RIGHT') to log fit outcome under,
             or None to stay silent (used to throttle logging per frame).
@@ -382,6 +413,46 @@ class LaneDetector:
         ys, xs = best
         points = self._contour_points(ys, xs, self._point_spacing_px)
 
+        # Bottom-row x position (closest to the vehicle) — same window used
+        # to rank candidates above — as the measurement compared against the
+        # previous frame's accepted fit for jump rejection.
+        y_spread = float(np.ptp(ys))
+        bottom_n = max(1, int(0.2 * (y_spread + 1)))
+        bottom_thresh = ys.max() - bottom_n + 1
+        bottom_sel = ys >= bottom_thresh
+        bottom_x = float(np.mean(xs[bottom_sel]))
+
+        prev_fit = self._prev_left_fit if side_key == 'left' else self._prev_right_fit
+        reject_streak = (
+            self._left_jump_reject_streak if side_key == 'left' else self._right_jump_reject_streak
+        )
+        if self._max_lane_jump_px > 0.0 and prev_fit is not None:
+            _, _, prev_bottom_x = prev_fit
+            jump = abs(bottom_x - prev_bottom_x)
+            if jump > self._max_lane_jump_px and reject_streak < self._max_lane_jump_reject_streak:
+                reject_streak += 1
+                if side_key == 'left':
+                    self._left_jump_reject_streak = reject_streak
+                else:
+                    self._right_jump_reject_streak = reject_streak
+                if side:
+                    self._log.warn(
+                        f'[DIAG:fit] {side} REJECT — jump={jump:.1f}px > '
+                        f'{self._max_lane_jump_px:.1f}px '
+                        f'(streak={reject_streak}/{self._max_lane_jump_reject_streak}), '
+                        f'reusing previous fit'
+                    )
+                prev_coeffs, prev_points, _ = prev_fit
+                return prev_coeffs, prev_points
+
+        # Either within the jump limit, no previous fit yet, or the streak
+        # ran out (accept — sustained movement, e.g. a real curve, not a
+        # glitch). Reset the streak either way.
+        if side_key == 'left':
+            self._left_jump_reject_streak = 0
+        else:
+            self._right_jump_reject_streak = 0
+
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', np.RankWarning)
@@ -393,7 +464,13 @@ class LaneDetector:
             #         f'x=[{int(xs.min())}..{int(xs.max())}]  '
             #         f'coeffs=[{" ".join(f"{c:+.4e}" for c in coeffs)}]'
             #     )
-            return coeffs.tolist(), points
+            coeffs_list = coeffs.tolist()
+            fit_state = (coeffs_list, points, bottom_x)
+            if side_key == 'left':
+                self._prev_left_fit = fit_state
+            else:
+                self._prev_right_fit = fit_state
+            return coeffs_list, points
         except (np.linalg.LinAlgError, ValueError) as exc:
             if side:
                 self._log.warn(f'[DIAG:fit] {side} REJECT — polyfit failed: {exc}')
