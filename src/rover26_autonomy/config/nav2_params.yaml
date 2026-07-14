@@ -1,15 +1,29 @@
 # ══════════════════════════════════════════════════════════════════════════════
-#  nav2_params.yaml  —  rover26_autonomy  (Hardware, No Vision)
+#  nav2_params_B_mppi.yaml  —  rover26_autonomy
+#  VARIANT B: MPPI CONTROLLER TUNING
 # ══════════════════════════════════════════════════════════════════════════════
 #
-#  Vision layer (pothole_layer / /pothole_obstacles) has been removed from
-#  local_costmap.  Re-add it when the vision pipeline is integrated.
+#  HYPOTHESIS: /plan runs down the middle of the lane, but the ROBOT rides to
+#  the right of it. Nothing is pulling the rover back onto the path.
 #
-#  Both costmaps read /scan directly — no scan_merger needed.
+#  The headline suspect is max_path_occupancy_ratio: 0.05 — PathAlignCritic
+#  SILENTLY DISABLES ITSELF when >5% of path points sit in high-cost cells.
+#  With inflation_radius 0.8 on both sides of a narrow lane, that threshold
+#  trips constantly, and once PathAlign is off the only thing steering you is
+#  PathFollowCritic chasing a lookahead point — which naturally cuts to one side.
 #
-#  collision_monitor is included at the bottom, commented out. To enable:
-#  uncomment the block, add the node to your launch file, and rewire
-#  velocity_smoother's output topic to feed into it (see comments there).
+#  CHANGES vs baseline (6):
+#    1. PathAlignCritic  max_path_occupancy_ratio  0.05 -> 0.3
+#    2. PathAlignCritic  offset_from_furthest      20   -> 6
+#    3. PathAlignCritic  cost_weight               20.0 -> 25.0
+#    4. PathAlignCritic  use_path_orientations     true -> false
+#    5. MPPI  vy_max 0.5 -> 0.0, vy_std 0.2 -> 0.0, ay_max 3.0 -> 0.0  (DiffDrive)
+#    6. MPPI  batch_size 2000 -> 1000  (control-loop headroom)
+#
+#  WHAT TO WATCH: cross-track error (distance base_footprint -> nearest point
+#  on /plan). Also check the log for "control loop missed its desired rate".
+#  REGRESSION RISK: a heavier PathAlign makes the rover more stubborn about
+#  rejoining the path and slightly less willing to swing wide around obstacles.
 # ══════════════════════════════════════════════════════════════════════════════
 
 amcl:
@@ -100,17 +114,33 @@ controller_server:
       plugin: "nav2_mppi_controller::MPPIController"
       time_steps: 56
       model_dt: 0.05
-      batch_size: 2000
+
+      # ── [B-6] CHANGED: batch_size 2000 -> 1000
+      #   2000 rollouts x 56 steps x 2 iterations at 20 Hz is heavy for an
+      #   onboard CPU. If the controller misses its rate, commands go stale and
+      #   the rover LAGS the path — same visible symptom as bad tuning.
+      #   CHECK THE LOG: "control loop missed its desired rate of 20.0000Hz".
+      #   If it never appeared at 2000, put this back — you're only losing
+      #   sample diversity for nothing.
+      batch_size: 1000
+
       ax_max: 3.0
       ax_min: -3.0
-      ay_max: 3.0
+
+      # ── [B-5] CHANGED: ay_max 3.0 -> 0.0, vy_std 0.2 -> 0.0, vy_max 0.5 -> 0.0
+      #   motion_model is "DiffDrive", so every lateral sample MPPI draws gets
+      #   zeroed by the model anyway. You were spending part of a finite noise
+      #   budget on a DOF the robot does not have. Zeroing it concentrates the
+      #   sampling on vx/wz, where it actually buys you tracking accuracy.
+      ay_max: 0.0
+
       az_max: 7.0
       vx_std: 0.2
-      vy_std: 0.2
+      vy_std: 0.0
       wz_std: 0.8
       vx_max: 0.5
       vx_min: -0.35
-      vy_max: 0.5
+      vy_max: 0.0
       wz_max: 1.8
       iteration_count: 2
       prune_distance: 1.7
@@ -160,12 +190,40 @@ controller_server:
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 14.0
-        max_path_occupancy_ratio: 0.05
+
+        # ── [B-3] CHANGED: cost_weight 20.0 -> 25.0
+        #   Tighten the pull back onto the path. If the rover now oscillates /
+        #   snakes around the path, this went too far — back off to 20.0 and
+        #   leave the other changes in.
+        cost_weight: 20.0
+
+        # ── [B-1] CHANGED: max_path_occupancy_ratio 0.05 -> 0.3   ★ PRIME SUSPECT
+        #   This critic TURNS ITSELF OFF whenever more than this fraction of the
+        #   path's points sit in high-cost cells. At 0.05, with inflation_radius
+        #   0.8 squeezing in from both lane edges, it is off most of the time —
+        #   and when PathAlign is off, NOTHING is holding you on the path.
+        #   0.3 keeps it alive in a narrow corridor while still bailing out when
+        #   the path is genuinely buried in obstacles.
+        max_path_occupancy_ratio: 0.3
+
         trajectory_point_step: 4
         threshold_to_consider: 0.5
-        offset_from_furthest: 20
-        use_path_orientations: true
+
+        # ── [B-2] CHANGED: offset_from_furthest 20 -> 6
+        #   The critic ignores the first N path points. At 20 (~1 m of path at
+        #   5 cm resolution) near-field deviation is FREE — the rover can drift
+        #   a metre sideways and pay nothing. 6 tightens near-field tracking a
+        #   lot, and is the second-biggest lever here after B-1.
+        offset_from_furthest: 6
+
+        # ── [B-4] CHANGED: use_path_orientations true -> false
+        #   Theta* emits any-angle segments whose per-point ORIENTATIONS are
+        #   interpolated and often poor. If they're junk, this critic penalises
+        #   you for having the "wrong" heading and actively steers you off the
+        #   path. Turning it off means align-on-position-only.
+        #   This one is a clean A/B: flip it back to true afterwards and see if
+        #   tracking gets worse. If it does, your path orientations are fine.
+        use_path_orientations: false
       PathFollowCritic:
         enabled: true
         cost_power: 1
@@ -197,7 +255,7 @@ local_costmap:
       width: 8
       height: 8
       resolution: 0.05
-      plugins: ["voxel_layer", "inflation_layer"]
+      plugins: ["voxel_layer", "denoise_layer", "inflation_layer"]
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -214,14 +272,15 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          # Must exceed the footprint corner radius (hypot(0.50, 0.35) ≈ 0.61 m)
-          # or lidar returns off the rover's own body get marked as lethal
-          # obstacles inside the footprint → "start pose is an obstacle" and
-          # every NavigateToPose goal aborts at planning time.
-          obstacle_min_range: 0.67
+          raytrace_max_range: 10.0
+          obstacle_min_range: 0.65
+          obstacle_max_range: 6.0
+      denoise_layer:
+        plugin: "nav2_costmap_2d::DenoiseLayer"
+        enabled: True
+        minimal_group_size: 3
+        group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
@@ -236,7 +295,6 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_footprint
-      # robot_radius: 0.6
       footprint: "[[0.50, 0.35], [0.50, -0.35], [-0.50, -0.35], [-0.50, 0.35]]"
       footprint_padding: 0.01
       resolution: 0.05
@@ -244,10 +302,11 @@ global_costmap:
       rolling_window: true
       width: 20
       height: 20
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "denoise_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
+        combination_method: 0
         observation_sources: scan
         scan:
           topic: /scan
@@ -255,17 +314,18 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 3.0
           raytrace_min_range: 0.0
-          obstacle_max_range: 2.5
-          # Must exceed the footprint corner radius (hypot(0.50, 0.35) ≈ 0.61 m)
-          # or lidar returns off the rover's own body get marked as lethal
-          # obstacles inside the footprint → "start pose is an obstacle" and
-          # every NavigateToPose goal aborts at planning time.
-          obstacle_min_range: 0.67
+          raytrace_max_range: 10.0
+          obstacle_min_range: 0.65
+          obstacle_max_range: 6.0
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+      denoise_layer:
+        plugin: "nav2_costmap_2d::DenoiseLayer"
+        enabled: True
+        minimal_group_size: 3
+        group_connectivity_type: 8
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 5.0
@@ -290,7 +350,7 @@ planner_server:
       w_euc_cost: 10.0
       w_traversal_cost: 1.0
       w_heuristic_param: 1.0
-      allow_unknown: true  
+      allow_unknown: true
 
 smoother_server:
   ros__parameters:

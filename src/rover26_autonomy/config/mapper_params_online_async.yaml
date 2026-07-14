@@ -18,7 +18,11 @@ slam_toolbox:
     scan_topic: /scan
 
     use_map_saver: true
-    mode: submapping
+
+    # CHANGED: submapping → mapping
+    # "submapping" is NOT a valid slam_toolbox mode; the only accepted values
+    # are "mapping" and "localization". The invalid value was being ignored.
+    mode: mapping
 
     # ── ROS / TF timing ───────────────────────────────────────────────────────
     debug_logging: false
@@ -57,7 +61,8 @@ slam_toolbox:
     map_size_y: 100.0             # Initial height of the map in meters
     map_start_x: 0.0              # Keeps the robot at the center of the 100x100 grid
     map_start_y: 0.0
-    generate_submaps: true
+
+    # REMOVED: generate_submaps — not a real slam_toolbox parameter, was a no-op.
     # CHANGED: 0.2 → 0.3 s
     # How long tf2 waits for a transform lookup before giving up.
     # Slightly more generous to handle the 10 Hz scan arrival jitter.
@@ -161,3 +166,17 @@ slam_toolbox:
     # turning the map into noise. 0.65 is the standard ROS default and
     # produces clean, trustworthy occupancy grids.
     occupancy_threshold: 0.65
+
+    # ── NOTE ON "REMOVED OBSTACLE STAYS ON THE MAP" ────────────────────────────
+    # slam_toolbox is NOT a dynamic-obstacle map. Each cell's occupancy is
+    # hits / passes, compared against occupancy_threshold above. A box that sat
+    # there for hundreds of scans has hundreds of hits; clearing it requires many
+    # new free passes through the same cells before the ratio drops back under
+    # 0.65. Two consequences:
+    #   1. The robot must MOVE. New scans only enter the pose graph when a new
+    #      keyframe is created (minimum_travel_distance / minimum_travel_heading).
+    #      Standing still = the map will never change, regardless of
+    #      map_update_interval.
+    #   2. Fading is gradual. Drive past the spot a few times.
+    # Fast clearing of transient obstacles is the COSTMAP's job — that is handled
+    # in nav2_params.yaml (raytrace ranges + combination_method: 0).
